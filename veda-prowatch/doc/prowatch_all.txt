@@ -1,0 +1,886 @@
+#-------------------------------------ИЗМЕНЕНИЯ К ПРОПУСКАМ
+
+[S] - объект запроса данных mnd-s:SourceDataRequestForPass
+
+1. ПОЛУЧИТЬ ДАННЫЕ ПО КАРТЕ
+При сохранении идивида класса mnd-s:SourceDataRequestForPass модуль обращается к PW и выполняет запрос данных по карте и сотруднику
+cardnumber = [S]["mnd-s:cardNumber"]
+
+данные карты:
+get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
+
+пример ответа:
+{
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "56029",
+    "CardStatus": 0,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2020-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+    "ClearanceCodes": [
+        {
+            "BadgeID": "0x002943313746444333462D394438392D3435",
+            "CardNumber": "56029",
+            "ClearCode": {
+                "TotalLogicalDevicesCount": 4,
+                "ClearCodeID": "0x004732433639444632452D323933422D3433",
+                "Description": "АИК-1, проходная круглосуточно",
+                "Description2": "для прохода в здание АИК-1",
+                "Description3": "",
+                "TimeZone": {
+                    "Description": ""
+                }
+            },
+            "CustomClearance": true
+        },
+        {
+            "BadgeID": "0x002943313746444333462D394438392D3435",
+            "CardNumber": "56029",
+            "ClearCode": {
+                "TotalLogicalDevicesCount": 18,
+                "ClearCodeID": "0x004736393931414131452D334242412D3445",
+                "Description": "Промплощадка круглосуточно",
+                "Description2": "для прохода на Промплощадку",
+                "Description3": "",
+                "TimeZone": {
+                    "Description": ""
+                }
+            },
+            "CustomClearance": true
+        }
+    ]
+}
+
+Вписать в [S]:
+v-s:dateFrom (дата) = IssueDate
+v-s:dateTo (дата) = ExpireDate
+mnd-s:hasAccessLevel = выполнить поиск уровней доступа, в которых v-s:registrationNumberAdd соответствует значениям ClearCodeID в ClearanceCodes.ClearCode
+( 'rdf:type'=='mnd-s:AccessLevel' ) && ( 'v-s:registrationNumberAdd'=='+ClearCodeID*' || 'v-s:registrationNumberAdd'=='+ClearCodeID*' )
+
+
+данные сотрудника:
+get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/badge/
+
+пример ответа:
+[
+    {
+        "BadgeID": "0x002943313746444333462D394438392D3435",
+        "LastName": "Лапшин",
+        "FirstName": "Александр",
+        "MiddleName": "Васильевич",
+        "IssueDate": "2017-06-28T00:00:00",
+        "CustomBadgeFields": [
+            {
+                "ColumnName": "BADGE_SAFETY_INST_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_BIRTHDATE",
+                "DateValue": "1990-01-07T00:00:00"
+            },
+            {
+                "ColumnName": "BADGE_TITLE",
+                "FieldType": 2,
+                "TextValue": "специалист"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_SOURCE",
+                "FieldType": 2,
+                "TextValue": "Ратнев"
+            },
+            {
+                "ColumnName": "BADGE_STATE_NAME",
+                "FieldType": 2,
+                "TextValue": "временно"
+            }
+        ]
+    }
+]
+
+Вписать в [S]:
+v-s:description - LastName + FirstName + MiddleName через " "
+rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE
+v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
+v-s:tabNumber - CustomBadgeFields.BADGE_ID
+mnd-s:briefingDate - CustomBadgeFields.BADGE_SAFETY_INST_DATE
+mnd-s:passEquipment - CustomBadgeFields.BADGE_TOOL01 + .... + CustomBadgeFields.BADGE_TOOL11 через разделитель '\n'
+mnd-s:winpakCardRecordId - BadgeID
+
+Если на любом из запросов ошибка, то очищаем все заполняемые выше поля выводим текст ошибки в v-s:errorMessage
+
+
+#-----------------------------------------------------------------------------------------------------------------------------------------
+
+Изменение данных по карте
+При сохранении индивида класса v-s:ExternalModuleHandler, если v-s:moduleLabel = "winpak pe44 update" , то выполянется обновление данных по карте
+[E] - объект v-s:ExternalModuleHandler
+[С] - заполненное пользователем изменение к пропуску [E]["v-s:backwardTarget"]
+
+
+2. ПРОДЛИТЬ СРОК ДЕЙСТВИЯ КАРТЫ
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:j2dohw8s79d29mxqwoeut39q92 , то выполняем все что ниже
+
+- обновляем срок карты
+
+dateto = [C]["v-s:dateToFact"] в формате 2020-12-08T00:00:00
+cardnumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
+
+put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+{
+    "CardNumber": "cardnumber",
+    "CardStatus": 0,
+    "ExpireDate": "dateto"
+}
+
+- обновляем срок владельца
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
+
+{
+    "BadgeID": "BadgeID",
+    "ExpireDate": "dateto"
+}
+#---------------------------------------------------------------
+
+
+3. ИЗМЕНИТЬ УРОВНИ ДОСТУПА
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:a5w44zg3l6lwdje9kw09je0wzki , то выполняем все что ниже
+
+- удаляем привязанные уровни доступа к карте
+cardnumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
+del http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/clearcodes
+
+- добавляем карте уровни доступа указанные в заявке
+accessLevel = [C]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
+post http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}}/clearcodes
+[
+    {
+        "ClearCodeID": "accessLevel1",
+    },
+    {
+        "ClearCodeID": "accessLevel2",
+    }
+]
+
+
+#-------------------------------------------------------------------------------------------------
+
+4. БЛОКИРОВКА ПРОПУСКА
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:e8j2tpz9r613hxq4g4rbbxtfqe , то:
+
+- ограничиваем и выключаем карту
+
+cardnumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
+dateto = сегодня в формате 2020-12-08T00:00:00
+
+put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+{
+    "CardNumber": "cardnumber",
+    "CardStatus": 1,
+    "ExpireDate": "dateto"
+}
+
+- ограничиваем срок действия владельца
+
+BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
+
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+{
+    "BadgeID": "BadgeID",
+    "ExpireDate": "dateto"
+}
+
+#-------------------------------------------------------------------------------------------------
+
+5. ВРЕМЕННОЕ ДОБАВЛЕНИЕ УРОВНЕЙ ДОСТУПА
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:efbibmgvxpr46t1qksmtkkautw , то:
+
+timed_accessLevel = [C]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
+timed_datefrom =  сегодня в формате  2020-12-08T00:00:00
+timed_dateto = [C]["v-s:dateToPlan"] со временем 23:59:59 в формате 2020-12-08T23:59:59
+
+post http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}}/clearcodes
+
+[
+    {
+        "ClearCodeID": "timed_accessLevel",
+        "ClearCodeType": 3,
+        "ValidFrom": "timed_datefrom",
+        "ValidTo": "timed_dateto"
+    }
+]
+
+#-------------------------------------------------------------------------------------------------
+
+6. ИЗМЕНЕНИЕ ОБОРУДОВАНИЯ
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:lt6pdbhy2qvwquzgnp22jj2r2w , то:
+
+Заменяем все поля для оборудования в держателе карты
+
+BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
+
+tool1-tool11 = разделить значение [C]["mnd-s:passEquipment"] построчно и вписать в BADGE_TOOL01 - BADGE_TOOL11 соответственно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
+все BADGE_TOOL обязательны, если значения нет, то вводить пустую строку ""
+
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+{
+    "BadgeID": "BadgeID",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_TOOL01",
+            "TextValue": "tool1"
+        },
+        {
+            "ColumnName": "BADGE_TOOL02",
+            "TextValue": "tool11"
+        }
+    ]
+}
+
+
+#-------------------------------------------------------------------------------------------------
+
+7. ИЗМЕНЕНИЕ ФАМИЛИИ
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:a8kf3r1ryfotqg695yckpm2isih , то:
+
+BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
+lastname = [C]["mnd-s:passLastName"]
+
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+{
+    "BadgeID": "BadgeID",
+    "LastName": "lastname",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_LNAME",
+            "TextValue": "lastname"
+        }
+    ]
+}
+
+
+#-------------------------------------------------------------------------------------------------
+
+8. ИЗМЕНЕНИЕ РЕГ. НОМЕРА ТС
+
+Если [C]["mnd-s:hasChangeKindForPass"] = d:a5y91zferr8t41abib4ecdlggn0 , то:
+
+BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
+regnumber = [C]["mnd-s:passVehicleRegistrationNumber"]
+
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+{
+    "BadgeID": "BadgeID",
+    "FirstName": "regnumber",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_CAR_PLATE",
+            "TextValue": "regnumber"
+        },
+        {
+            "ColumnName": "BADGE_FNAME",
+            "TextValue": "regnumber"
+        }
+    ]
+}
+
+
+
+#-----------------------------------------------ОБРАБОТКА НОВЫХ ПРОПУСКОВ
+
+#---------------------------------------------------------------
+9. ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД
+При сохранении объекта mnd-s:SourceDataRequestForPassByNames выполнять запрос к ProWatch на основе ФИО и номера ТС
+
+[S] - объект mnd-s:SourceDataRequestForPassByNames
+[P] - пропуск который включает в себя запрос данных [S]["v-s:backwardTarget"]
+[R] - возвращенные записи из СКУД по данному ФИО или номеру [S]["mnd-s:hasACSRecord"]
+
+####Получаем данные по держателю:
+
+- если пропуск на ТС mnd-s:hasPassKind = d:c94b6f98986d493cae4a3a37249101dc || d:5f5be080f1004af69742bc574c030609 || d:1799f1e110054b5a9ef819754b0932ce то выполняем запрос и вписывем данные в этот же объект [S]
+
+car_number = [S]["mnd-s:passVehicleRegistrationNumber"]
+
+get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_FNAME/{car_number}%25
+
+пример ответа:
+[
+    {
+        "BadgeID": "0x002943313746444333462D394438392D3435",
+        "LastName": "Лапшин",
+        "FirstName": "Александр",
+        "MiddleName": "Васильевич",
+        "IssueDate": "2017-06-28T00:00:00",
+        "CustomBadgeFields": [
+            {
+                "ColumnName": "BADGE_SAFETY_INST_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_BIRTHDATE",
+                "DateValue": "1990-01-07T00:00:00"
+            },
+            {
+                "ColumnName": "BADGE_TITLE",
+                "FieldType": 2,
+                "TextValue": "специалист"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_SOURCE",
+                "FieldType": 2,
+                "TextValue": "Ратнев"
+            },
+            {
+                "ColumnName": "BADGE_STATE_NAME",
+                "FieldType": 2,
+                "TextValue": "временно"
+            }
+        ]
+    }
+]
+Может вернуть несколько значений. Если ничего не вернулось, то v-s:errorMessage = "Держатель не найден"
+
+Для каждого полученного держателя создать индивид класса mnd-s:ACSRecord (он же [R]) и в него вписать:
+v-s:backwardProperty - mnd-s:hasACSRecord
+v-s:backwardTarget - [S]
+v-s:canRead - true
+v-s:description - LastName + FirstName + MiddleName через " "
+rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE через " "
+v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
+mnd-s:winpakCardRecordId - BadgeID
+
+
+- если пропуск на человека mnd-s:hasPassKind = d:ece7e741557e406bb996809163810c6e || d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea || d:ih7mpbsuu6xxmy7ouqlyhfqyua
+lastname = [S]["v-s:lastName"]
+firstname = [S]["v-s:firstName"]
+middlename = [S]["v-s:middleName"]
+
+get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/{lastname}?$filter=FirstName eq {firsttname} and MiddleName eq {middlename}
+
+Ответ будет выглядеть также как в предыдущем случае.
+Если ничего не вернулось, то v-s:errorMessage = "Держатель не найден"
+
+Для каждого полученного держателя создать индивид класса mnd-s:ACSRecord (он же [R]) и в него вписать:
+v-s:backwardProperty - mnd-s:hasACSRecord
+v-s:backwardTarget - [S]
+v-s:canRead - true
+v-s:description - LastName + FirstName + MiddleName через " "
+rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE
+mnd-s:winpakCardRecordId - BadgeID
+
+####Получаем данные по карте
+Запрос выполняется по результату получения данных по держателю (требуется id держателя). Для каждого найденного держателя [R] выполнить запрос данных карт.
+Или при сохранении индивида класса mnd-s:ACSRecord выполнять запрос данных карты из PW. Как по твоему мнению будет лучше в реализации
+
+BadgeID = [R]["mnd-s:winpakCardRecordId"]
+
+get http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/cards
+
+пример ответа:
+[
+  {
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "56029",
+    "CardStatus": 0,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2021-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+  },
+  {
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "5327",
+    "CardStatus": 1,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2020-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+  }
+]
+Может вернуть данные по нескольким картам, из них нужно выбрать только те где CardStatus=0, может ничего не вернуть в этом случае ничего не вписываем
+
+Вписать в [R]:
+mnd-s:cardNumber =  вписать все значения CardNumber полученных объектов, может быть несколько значений
+
+
+#----------------------------------------------------------------
+10. ДОБАВЛЕНИЕ НОВОЙ КАРТЫ ДЕРЖАТЕЛЮ
+
+При сохранении индивида класса v-s:ExternalModuleHandler, если v-s:moduleLabel = "winpak pe44 update", то если обновление выполняется для записи в СКУД (в [E]["v-s:backwardTarget"] rdf:type="mnd-s:ACSRecord") выполянется следующее
+
+[E] - объект v-s:ExternalModuleHandler
+[R] - запись держателя в СКУД [E]["v-s:backwardTarget"]
+[S] - запрос данных в pw [E]["v-s:backwardTarget"]["v-s:backwardTarget"]
+[P] - оформленый пропуск [E]["v-s:backwardTarget"]["v-s:backwardTarget"]["v-s:backwardTarget"]
+
+cardnumber = [P]["mnd-s:cardNumber"]
+BadgeID = [R]["mnd-s:winpakCardRecordId"]
+accessLevel = [P]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
+dateTo = [P]["v-s:dateToFact"]
+
+- отвязываем карту от текущих держателей
+
+delete http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
+если карта не привязана, то вернет ошибку обработки, но игнорируем
+
+- создаем новую карту для держателя
+
+post http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+
+{
+    "BadgeID": "BadgeID",
+    "CardNumber": "cardnumber",
+    "CardStatus": 0,
+    "ExpireDate": "dateTo",
+    "Company": {
+        "CompanyID": "0x004842343236434238382D443536302D3433"
+    },
+    "ClearanceCodes": [
+        {
+            "ClearCode": {
+                "ClearCodeID": "accessLevel"
+            }
+        },
+        {
+            "ClearCode": {
+                "ClearCodeID": "accessLevel"
+            }
+        },
+        {
+            "ClearCode": {
+                "ClearCodeID": "accessLevel"
+            }
+        }
+    ]
+}
+
+- обновляем оборудование и срок действия держателя
+
+Заменяем все поля для оборудования в держателе карты
+
+BadgeID = [R]["mnd-s:winpakCardRecordId"]
+dateTo = [P]["v-s:dateToFact"]
+tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно и вписать в BADGE_TOOL01 - BADGE_TOOL11 соответственно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
+
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+{
+    "BadgeID": "BadgeID",
+    "ExpireDate": "dateTo",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_TOOL01",
+            "TextValue": "tool1"
+        },
+        {
+            "ColumnName": "BADGE_TOOL02",
+            "TextValue": "tool11"
+        }
+    ]
+}
+
+- отключаем все действующие карты держателя, если пропуск временный
+если [P]["mnd-s:hasPassKind"] = d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea6 || d:ih7mpbsuu6xxmy7ouqlyhfqyua , то выполняем следующее
+
+cardnumber = [R]["mnd-s:cardNumber"]
+для каждого cardnumber выполнить обновление в СКУД
+put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+{
+    "CardNumber": "cardnumber",
+    "CardStatus": 1,
+}
+
+- по факту выполнения при вписывании статуса обработки в объект v-s:ExternalModuleHandler необходимо дополнить значение поля v-s:backwardTarget = индивид пропуска [P] (не заменить, а добавить к существующему)
+
+
+#----------------------------------------------------------------
+11. ДОБАВЛЕНИЕ ВСЕХ ДАННЫХ ДЕРЖАТЕЛЯ И КАРТЫ
+
+При сохранении индивида класса v-s:ExternalModuleHandler, если v-s:moduleLabel = "winpak pe44 create", то выполянется добавление данных по карте
+[E] - объект v-s:ExternalModuleHandler
+[P] - заполненный пользователем пропуск [E]["v-s:backwardTarget"]
+
+------------------------------
+Сотрудник:
+Если пропуск на человека [P]["mnd-s:hasPassKind"] =  d:ece7e741557e406bb996809163810c6e || d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea6 || d:ih7mpbsuu6xxmy7ouqlyhfqyua
+
+- проверить наличие сотрудника по ФИО+дата рождения
+lastname = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:lastName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passLastName"]
+firstname = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:firstName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passFirstName"]
+middlename = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:middleName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passMiddleName"]
+birthday =  если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:birthday"] (если пусто то [P]["v-s:birthday"])
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["v-s:birthday"]
+        в формате 1990-03-01T00:00:00 
+
+
+post http://syk-vs149.mp.local:8734/pwapi/badges
+
+lastname = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:lastName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passLastName"]
+firstname = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:firstName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passFirstName"]
+middlename = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:middleName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passMiddleName"]
+birthday =  если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:birthday"] (если пусто то [P]["v-s:birthday"])
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["v-s:birthday"]
+        в формате 1990-03-01T00:00:00
+position = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:occupation"]["rdfs:label"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passPosition"]
+department = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:parentUnit"]["rdfs:label"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passFirstName"]
+requestkind = [P]["mnd-s:hasPassKind"]["rdfs:label"] вид заявки
+tool1-tool11 = для оборудования разделить значение [P]["mnd-s:passEquipment"] построчно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
+cardnumber = [P]["mnd-s:cardNumber"] номер карты
+subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
+inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
+subdivision_name = [P]["v-s:supplier"]["v-s:shortLabel"]
+company_name = [P]["v-s:correspondentOrganization"]["v-s:shortLabel"]
+request_date = текущая дата без времени в формате mm.dd.yyyy
+
+{
+    "LastName": "lastname",
+    "FirstName": "firstname",
+    "MiddleName": "middlename",
+    "IssueDate": "2018-01-03T00:00:00",
+    "ExpireDate": "2018-01-03T00:00:00",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_BIRTHDATE",
+            "DateValue": "birthday"
+        },
+        {
+            "ColumnName": "BADGE_TITLE",
+            "FieldType": 2,
+            "TextValue": "position"
+        },
+        {
+            "ColumnName": "BADGE_STATE_NAME",
+            "FieldType": 2,
+            "TextValue": "requestkind"
+        },
+        {
+            "ColumnName": "BADGE_FNAME",
+            "FieldType": 2,
+            "TextValue": "firstname"
+        },
+        {
+            "ColumnName": "BADGE_LNAME",
+            "FieldType": 2,
+            "TextValue": "lastname"
+        },
+        {
+            "ColumnName": "BADGE_TOOL01",
+            "FieldType": 2,
+            "TextValue": "tool1"
+        },
+        {
+            "ColumnName": "BADGE_TOOL02",
+            "FieldType": 2,
+            "TextValue": "tool2"
+        },
+        {
+            "ColumnName": "BADGE_TOOL03",
+            "FieldType": 2,
+            "TextValue": "tool3"
+        },
+        {
+            "ColumnName": "BADGE_TOOL04",
+            "FieldType": 2,
+            "TextValue": "tool4"
+        },
+        {
+            "ColumnName": "BADGE_TOOL05",
+            "FieldType": 2,
+            "TextValue": "tool5"
+        },
+        {
+            "ColumnName": "BADGE_TOOL06",
+            "FieldType": 2,
+            "TextValue": "tool6"
+        },
+        {
+            "ColumnName": "BADGE_TOOL07",
+            "FieldType": 2,
+            "TextValue": "tool7"
+        },
+        {
+            "ColumnName": "BADGE_TOOL08",
+            "FieldType": 2,
+            "TextValue": "tool8"
+        },
+        {
+            "ColumnName": "BADGE_TOOL09",
+            "FieldType": 2,
+            "TextValue": "tool9"
+        },
+        {
+            "ColumnName": "BADGE_TOOL10",
+            "FieldType": 2,
+            "TextValue": "tool10"
+        },
+        {
+            "ColumnName": "BADGE_TOOL11",
+            "FieldType": 2,
+            "TextValue": "tool11"
+        },
+        {
+            "ColumnName": "BADGE_CARD",
+            "FieldType": 2,
+            "TextValue": "cardnumber"
+        },
+        {
+            "ColumnName": "BADGE_SUBDIVISION_ID",
+            "FieldType": 2,
+            "TextValue": "subdivision_inn"
+        },
+        {
+            "ColumnName": "BADGE_COMPANY_ID",
+            "FieldType": 2,
+            "TextValue": "inn"
+        },
+        {
+            "ColumnName": "BADGE_SUBDIVISION_NAME",
+            "FieldType": 2,
+            "TextValue": "subdivision_name"
+        },
+        {
+            "ColumnName": "BADGE_COMPANY_NAME",
+            "FieldType": 2,
+            "TextValue": "company_name"
+        },
+        {
+            "ColumnName": "BADGE_DEPARTMENT",
+            "FieldType": 2,
+            "TextValue": "department"
+        },
+        {
+            "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
+            "FieldType": 2,
+            "TextValue": "request_date"
+        }
+    ]
+}
+
+
+Транспорт:
+если пропуск на транспорт [P]["mnd-s:hasPassKind"] = d:c94b6f98986d493cae4a3a37249101dc || d:5f5be080f1004af69742bc574c030609 || d:1799f1e110054b5a9ef819754b0932ce
+
+lastname = "."
+firstname = [P]["mnd-s:passVehicleRegistrationNumber"] + " " + [P]["v-s:hasVehicleModel"]["rdfs:label"]
+middlename = "."
+requestkind = [P]["mnd-s:hasPassKind"]["rdfs:label"] вид заявки
+tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно (если не хватает tool, то оставшееся вписать в последнее)
+cardnumber = [P]["mnd-s:cardNumber"] номер карты
+subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
+inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
+subdivision_name = [P]["v-s:supplier"]["v-s:shortLabel"]
+company_name = [P]["v-s:correspondentOrganization"]["v-s:shortLabel"]
+request_date = текущая дата без времени в формате mm.dd.yyyy
+
+{
+    "LastName": "lastname",
+    "FirstName": "firstname",
+    "MiddleName": "middlename",
+    "IssueDate": "2018-01-03T00:00:00",
+    "ExpireDate": "2018-01-03T00:00:00",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_STATE_NAME",
+            "FieldType": 2,
+            "TextValue": "requestkind"
+        },
+        {
+            "ColumnName": "BADGE_FNAME",
+            "FieldType": 2,
+            "TextValue": "firstname"
+        },
+        {
+            "ColumnName": "BADGE_LNAME",
+            "FieldType": 2,
+            "TextValue": "lastname"
+        },
+        {
+            "ColumnName": "BADGE_TOOL01",
+            "FieldType": 2,
+            "TextValue": "tool1"
+        },
+        {
+            "ColumnName": "BADGE_TOOL02",
+            "FieldType": 2,
+            "TextValue": "tool2"
+        },
+        {
+            "ColumnName": "BADGE_TOOL03",
+            "FieldType": 2,
+            "TextValue": "tool3"
+        },
+        {
+            "ColumnName": "BADGE_TOOL04",
+            "FieldType": 2,
+            "TextValue": "tool4"
+        },
+        {
+            "ColumnName": "BADGE_TOOL05",
+            "FieldType": 2,
+            "TextValue": "tool5"
+        },
+        {
+            "ColumnName": "BADGE_TOOL06",
+            "FieldType": 2,
+            "TextValue": "tool6"
+        },
+        {
+            "ColumnName": "BADGE_TOOL07",
+            "FieldType": 2,
+            "TextValue": "tool7"
+        },
+        {
+            "ColumnName": "BADGE_TOOL08",
+            "FieldType": 2,
+            "TextValue": "tool8"
+        },
+        {
+            "ColumnName": "BADGE_TOOL09",
+            "FieldType": 2,
+            "TextValue": "tool9"
+        },
+        {
+            "ColumnName": "BADGE_TOOL10",
+            "FieldType": 2,
+            "TextValue": "tool10"
+        },
+        {
+            "ColumnName": "BADGE_TOOL11",
+            "FieldType": 2,
+            "TextValue": "tool11"
+        },
+        {
+            "ColumnName": "BADGE_CARD",
+            "FieldType": 2,
+            "TextValue": "cardnumber"
+        },
+        {
+            "ColumnName": "BADGE_SUBDIVISION_ID",
+            "FieldType": 2,
+            "TextValue": "subdivision_inn"
+        },
+        {
+            "ColumnName": "BADGE_COMPANY_ID",
+            "FieldType": 2,
+            "TextValue": "inn"
+        },
+        {
+            "ColumnName": "BADGE_SUBDIVISION_NAME",
+            "FieldType": 2,
+            "TextValue": "subdivision_name"
+        },
+        {
+            "ColumnName": "BADGE_COMPANY_NAME",
+            "FieldType": 2,
+            "TextValue": "company_name"
+        },
+        {
+            "ColumnName": "BADGE_DEPARTMENT",
+            "FieldType": 2,
+            "TextValue": "department"
+        },
+        {
+            "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
+            "FieldType": 2,
+            "TextValue": "request_date"
+        },
+        {
+            "ColumnName": "BADGE_CAR_PLATE",
+            "FieldType": 2,
+            "TextValue": "firstname"
+        }
+    ]
+}
+
+
+При успешном выполнении получаем ответ 201 и ид в теле
+{
+    "BadgeID": "0x002938354646453546362D343231332D3430",
+    "TransStatusText": "0x002938354646453546362D343231332D3430"
+}
+BadgeID нужно запомнить, далее по нему будут выполняться запросы на добавление карт и фото
+
+#----------------------------------------------
+- добавить фото
+post http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/photo подставить BadgeID из ответа о создании
+
+в теле запроса файл из [P]["v-s:hasImage"] в base64
+
+
+#----------------------------------------------
+cardnumber = [P]["mnd-s:cardNumber"]
+BadgeID = id держателя из ответа о создании
+accessLevel = [P]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
+dateTo = [P]["v-s:dateFactTo"] в формате 2021-03-23T23:59:59
+
+- отвязываем карту от текущих держателей
+
+delete http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
+если карта не привязана, то вернет ошибку обработки, но игнорируем
+
+- добавить карту к созданному владельцу с уровнями доступа
+post http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+{
+    "BadgeID": "BadgeID",
+    "CardNumber": "cardnumber",
+    "CardStatus": 0,
+    "ExpireDate": "dateTo",
+    "Company": {
+        "CompanyID": "0x004842343236434238382D443536302D3433"
+    },
+    "ClearanceCodes": [
+        {
+            "ClearCode": {
+                "ClearCodeID": "accessLevel"
+            }
+        },
+        {
+            "ClearCode": {
+                "ClearCodeID": "accessLevel"
+            }
+        },
+        {
+            "ClearCode": {
+                "ClearCodeID": "accessLevel"
+            }
+        }
+    ]
+}
