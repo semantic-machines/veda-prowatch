@@ -2,9 +2,9 @@ use crate::common::*;
 use base64::encode;
 use serde_json::json;
 use std::fs;
+use v_module::module::Module;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
-use v_module::module::Module;
 use v_module::v_onto::datatype::Lang;
 use v_module::v_onto::individual::Individual;
 
@@ -150,21 +150,24 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 error!("update_prowatch_data::add_card_with_access_to_pw, error={:?}", e);
             }
 
-            let date_to = indv_p.get_first_datetime("v-s:dateToFact");
             let mut sj = vec![];
             equipment_to_field_list(&mut sj, &mut indv_p);
-            if let Err(e) =
-                ctx.pw_api_client.badging_api().badges_put(json!({ "BadgeID": badge_id, "ExpireDate": i64_to_str_date_ymdthms (date_to), "CustomBadgeFields": sj }))
-            {
+
+            let js = if !indv_r.get_first_literal("mnd-s:cardNumber").unwrap_or_default().is_empty() {
+                json!({ "BadgeID": badge_id, "CustomBadgeFields": sj })
+            } else {
+                let date_to = indv_p.get_first_datetime("v-s:dateToFact");
+                json!({ "BadgeID": badge_id, "ExpireDate": i64_to_str_date_ymdthms (date_to), "CustomBadgeFields": sj })
+            };
+
+            if let Err(e) = ctx.pw_api_client.badging_api().badges_put(js) {
                 error!("badges_put: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
             }
 
+            //  отключаем все действующие карты держателя, если пропуск временный
             if let Some(has_kind_for_pass) = indv_p.get_first_literal("mnd-s:hasPassKind") {
-                if has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd"
-                    || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6"
-                    || has_kind_for_pass == "d:ih7mpbsuu6xxmy7ouqlyhfqyua"
-                {
+                if has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd" || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6" {
                     if let Some(v) = indv_r.get_literals("mnd-s:cardNumber") {
                         for card_number in v {
                             let cnj = json!({
@@ -184,7 +187,7 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
     } else {
         let has_change_kind_for_pass = indv_p.get_literals("mnd-s:hasChangeKindForPass");
         if p_type != "mnd-s:Pass" && p_type != "mnd-s:PassChangeRequest" && has_change_kind_for_pass.is_none() {
-            error!("not found [mnd-s:hasChangeKindForPass] in {}", indv_p.get_id());
+            error!("not found [mnd-s:hasChangeKindForPass] in {}, type={}", indv_p.get_id(), p_type);
             return Err((ResultCode::NotFound, "исходные данные некорректны".to_owned()));
         }
         let has_change_kind_for_passes = has_change_kind_for_pass.unwrap_or_default();
@@ -366,7 +369,7 @@ fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: 
     let card_number = wcard_number.unwrap();
 
     if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_delete(&card_number) {
-        error!("fail delete card {}, badges_cards_card, err={:?}", card_number, e);
+        warn!("fail delete card {}, badges_cards_card, err={:?}", card_number, e);
     }
 
     let cnj = json!({

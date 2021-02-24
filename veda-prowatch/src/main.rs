@@ -13,11 +13,11 @@ use prowatch_client::apis::configuration::Configuration;
 use std::thread;
 use std::time as std_time;
 use url::Url;
-use v_module::v_api::app::ResultCode;
-use v_module::v_api::IndvOp;
+use v_module::common::load_onto;
 use v_module::info::ModuleInfo;
 use v_module::module::{get_cmd, get_info_of_module, get_inner_binobj_as_individual, init_log, wait_load_ontology, wait_module, Module, PrepareError};
-use v_module::common::load_onto;
+use v_module::v_api::app::ResultCode;
+use v_module::v_api::IndvOp;
 use v_module::v_onto::individual::Individual;
 use v_module::v_onto::onto::Onto;
 use v_queue::consumer::Consumer;
@@ -93,14 +93,16 @@ fn listen_queue<'a>() -> Result<(), i32> {
     Ok(())
 }
 
-fn heartbeat(_module: &mut Module, _module_info: &mut ModuleInfo, _ctx: &mut Context) -> Result<(), PrepareError> { Ok (()) }
+fn heartbeat(_module: &mut Module, _module_info: &mut ModuleInfo, _ctx: &mut Context) -> Result<(), PrepareError> {
+    Ok(())
+}
 
 fn before_batch(_module: &mut Module, _ctx: &mut Context, _size_batch: u32) -> Option<u32> {
     None
 }
 
 fn after_batch(_module: &mut Module, _module_info: &mut ModuleInfo, _ctx: &mut Context, _prepared_batch_size: u32) -> Result<bool, PrepareError> {
-    Ok (false)
+    Ok(false)
 }
 
 fn prepare(module: &mut Module, _module_info: &mut ModuleInfo, ctx: &mut Context, queue_element: &mut Individual, _my_consumer: &Consumer) -> Result<bool, PrepareError> {

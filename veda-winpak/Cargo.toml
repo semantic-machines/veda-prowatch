@@ -22,4 +22,4 @@ voca_rs = "1.8.0"
 
 v_queue = "0.1"
 
-v_module = { package = "v-common-module", version = "0.1.19" }
+v_module = { package = "v-common-module", version = "0.1.22" }

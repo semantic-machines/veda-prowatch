@@ -1,9 +1,9 @@
 use prowatch_client::apis::Error;
 use serde_json::{Map, Value};
 use uuid::Uuid;
+use v_module::module::*;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::*;
-use v_module::module::*;
 use v_module::v_onto::datatype::Lang;
 use v_module::v_onto::individual::*;
 
