@@ -51,7 +51,6 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
             last_name = indv_p.get_first_literal("mnd-s:passLastName").unwrap_or_default();
             middle_name = indv_p.get_first_literal("mnd-s:passMiddleName").unwrap_or_default();
             add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", indv_p.get_first_literal("mnd-s:passPosition"));
-            add_txt_to_fields(&mut custom_fields, "BADGE_DEPARTMENT", indv_p.get_first_literal("mnd-s:passFirstName"));
             add_date_to_fields(&mut custom_fields, "BADGE_BIRTHDATE", indv_p.get_first_datetime("v-s:birthday"));
         }
     } else if pass_type == PassType::Vehicle {
@@ -71,8 +70,8 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
     add_txt_to_fields(&mut custom_fields, "BADGE_CARD", indv_p.get_first_literal("mnd-s:cardNumber"));
     add_txt_to_fields(&mut custom_fields, "BADGE_COMPANY_ID", get_literal_of_link(module, indv_p, "v-s:correspondentOrganization", "v-s:taxId"));
     add_txt_to_fields(&mut custom_fields, "BADGE_SUBDIVISION_ID", get_literal_of_link(module, indv_p, "v-s:supplier", "v-s:taxId"));
-    add_txt_to_fields(&mut custom_fields, "BADGE_SUBDIVISION_NAME", get_literal_of_link(module, indv_p, "v-s:supplier", "v-s:shortLabel"));
-    add_txt_to_fields(&mut custom_fields, "BADGE_COMPANY_NAME", get_literal_of_link(module, indv_p, "v-s:correspondentOrganization", "v-s:shortLabel"));
+    add_txt_to_fields(&mut custom_fields, "BADGE_SUBDIVISION_NAME", get_literal_of_link(module, indv_p, "v-s:supplier", "rdfs:label"));
+    add_txt_to_fields(&mut custom_fields, "BADGE_COMPANY_NAME", get_literal_of_link(module, indv_p, "v-s:correspondentOrganization", "rdfs:label"));
     add_txt_to_fields(&mut custom_fields, "BADGE_CLEARANCE_ORDER_DATE", Some(i64_to_str_date_mdy(Some(get_now_00_00_00().timestamp()))));
     add_txt_to_fields(&mut custom_fields, "BADGE_FNAME", Some(first_name.to_owned()));
     add_txt_to_fields(&mut custom_fields, "BADGE_LNAME", Some(last_name.to_owned()));

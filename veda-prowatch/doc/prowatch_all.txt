@@ -490,6 +490,8 @@ BadgeID = [R]["mnd-s:winpakCardRecordId"]
 dateTo = [P]["v-s:dateToFact"]
 tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно и вписать в BADGE_TOOL01 - BADGE_TOOL11 соответственно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
 
+если [R]["mnd-s:cardNumber"] не пусто, то исключить из запроса поле "ExpireDate": "dateTo" (не изменяем срок действия человека, если есть действующая карта)
+
 put http://syk-vs149.mp.local:8734/pwapi/badges
 
 {
@@ -508,7 +510,7 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 }
 
 - отключаем все действующие карты держателя, если пропуск временный
-если [P]["mnd-s:hasPassKind"] = d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea6 || d:ih7mpbsuu6xxmy7ouqlyhfqyua , то выполняем следующее
+если [P]["mnd-s:hasPassKind"] = d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea6 , то выполняем следующее
 
 cardnumber = [R]["mnd-s:cardNumber"]
 для каждого cardnumber выполнить обновление в СКУД
@@ -559,14 +561,13 @@ birthday =  если заполнено [P]["v-s:correspondentPerson"], то [P]
 position = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:occupation"]["rdfs:label"]
         если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passPosition"]
 department = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:parentUnit"]["rdfs:label"]
-        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passFirstName"]
 requestkind = [P]["mnd-s:hasPassKind"]["rdfs:label"] вид заявки
 tool1-tool11 = для оборудования разделить значение [P]["mnd-s:passEquipment"] построчно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
 cardnumber = [P]["mnd-s:cardNumber"] номер карты
 subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
 inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
-subdivision_name = [P]["v-s:supplier"]["v-s:shortLabel"]
-company_name = [P]["v-s:correspondentOrganization"]["v-s:shortLabel"]
+subdivision_name = [P]["v-s:supplier"]["rdfs:label"]
+company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"]
 request_date = текущая дата без времени в формате mm.dd.yyyy
 
 {
@@ -705,8 +706,8 @@ tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] п
 cardnumber = [P]["mnd-s:cardNumber"] номер карты
 subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
 inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
-subdivision_name = [P]["v-s:supplier"]["v-s:shortLabel"]
-company_name = [P]["v-s:correspondentOrganization"]["v-s:shortLabel"]
+subdivision_name = [P]["v-s:supplier"]["rdfs:label"]
+company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"]
 request_date = текущая дата без времени в формате mm.dd.yyyy
 
 {
