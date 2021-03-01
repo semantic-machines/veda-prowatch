@@ -262,7 +262,7 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 Если [C]["mnd-s:hasChangeKindForPass"] = d:a8kf3r1ryfotqg695yckpm2isih , то:
 
 BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
-lastname = [C]["mnd-s:passLastName"]
+lastname = [C]["mnd-s:passLastName"] с обрезанием пробелов в начале и конце строки
 
 put http://syk-vs149.mp.local:8734/pwapi/badges
 
@@ -285,7 +285,7 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 Если [C]["mnd-s:hasChangeKindForPass"] = d:a5y91zferr8t41abib4ecdlggn0 , то:
 
 BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
-regnumber = [C]["mnd-s:passVehicleRegistrationNumber"]
+regnumber = [C]["mnd-s:passVehicleRegistrationNumber"] с обрезанием пробелов в начале и конце строки
 
 put http://syk-vs149.mp.local:8734/pwapi/badges
 
@@ -550,24 +550,24 @@ birthday =  если заполнено [P]["v-s:correspondentPerson"], то [P]
 post http://syk-vs149.mp.local:8734/pwapi/badges
 
 lastname = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:lastName"]
-        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passLastName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passLastName"] с обрезанием пробелов в начале и конце строки
 firstname = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:firstName"]
-        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passFirstName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passFirstName"] с обрезанием пробелов в начале и конце строки
 middlename = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:middleName"]
-        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passMiddleName"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passMiddleName"] с обрезанием пробелов в начале и конце строки
 birthday =  если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:employee"]["v-s:birthday"] (если пусто то [P]["v-s:birthday"])
         если [P]["v-s:correspondentPerson"] пусто, то [P]["v-s:birthday"]
         в формате 1990-03-01T00:00:00
 position = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:occupation"]["rdfs:label"]
-        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passPosition"]
-department = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:parentUnit"]["rdfs:label"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passPosition"] с обрезанием пробелов в начале и конце строки
+department = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:parentUnit"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 requestkind = [P]["mnd-s:hasPassKind"]["rdfs:label"] вид заявки
 tool1-tool11 = для оборудования разделить значение [P]["mnd-s:passEquipment"] построчно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
 cardnumber = [P]["mnd-s:cardNumber"] номер карты
 subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
 inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
-subdivision_name = [P]["v-s:supplier"]["rdfs:label"]
-company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"]
+subdivision_name = [P]["v-s:supplier"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
+company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 request_date = текущая дата без времени в формате mm.dd.yyyy
 
 {
@@ -699,15 +699,15 @@ request_date = текущая дата без времени в формате m
 если пропуск на транспорт [P]["mnd-s:hasPassKind"] = d:c94b6f98986d493cae4a3a37249101dc || d:5f5be080f1004af69742bc574c030609 || d:1799f1e110054b5a9ef819754b0932ce
 
 lastname = "."
-firstname = [P]["mnd-s:passVehicleRegistrationNumber"] + " " + [P]["v-s:hasVehicleModel"]["rdfs:label"]
-middlename = "."
+firstname = [P]["mnd-s:passVehicleRegistrationNumber"] + " " + [P]["v-s:hasVehicleModel"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
+middlename = "." 
 requestkind = [P]["mnd-s:hasPassKind"]["rdfs:label"] вид заявки
 tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно (если не хватает tool, то оставшееся вписать в последнее)
 cardnumber = [P]["mnd-s:cardNumber"] номер карты
 subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
 inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
-subdivision_name = [P]["v-s:supplier"]["rdfs:label"]
-company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"]
+subdivision_name = [P]["v-s:supplier"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
+company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 request_date = текущая дата без времени в формате mm.dd.yyyy
 
 {

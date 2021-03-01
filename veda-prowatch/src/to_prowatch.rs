@@ -65,6 +65,10 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
         return Err((ResultCode::BadRequest, "unknown pass type".to_owned()));
     }
 
+    first_name = first_name.trim().to_owned();
+    last_name = last_name.trim().to_owned();
+    middle_name = middle_name.trim().to_owned();
+
     equipment_to_field_list(&mut custom_fields, indv_p);
     add_txt_to_fields(&mut custom_fields, "BADGE_STATE_NAME", get_literal_of_link(module, indv_p, "mnd-s:hasPassKind", "rdfs:label"));
     add_txt_to_fields(&mut custom_fields, "BADGE_CARD", indv_p.get_first_literal("mnd-s:cardNumber"));
@@ -113,6 +117,7 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
 }
 
 pub fn set_update_status(module: &mut Module, ctx: &mut Context, indv: &mut Individual, res: Result<(), (ResultCode, String)>) -> ResultCode {
+    indv.parse_all();
     if let Err((sync_res, info)) = res {
         if sync_res == ResultCode::ConnectError {
             return sync_res;
@@ -250,38 +255,48 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             }
         }
         if is_update_ts_number {
-            let cnj = json!( {
+            if let Some(rn) = ts_number {
+                let rn = rn.trim();
+                let cnj = json!( {
                                 "BadgeID": badge_id,
-                                "FirstName": ts_number,
+                                "FirstName": rn,
                                 "CustomBadgeFields": [
                                     {
                                     "ColumnName": "BADGE_CAR_PLATE",
-                                    "TextValue": ts_number
+                                    "TextValue": rn
                                     },
                                     {
                                     "ColumnName": "BADGE_FNAME",
-                                    "TextValue": ts_number
+                                    "TextValue": rn
                                     }
                                 ] } );
-            if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
-                error!("update_ts_number: badges_put: err={:?}", e);
-                return Err((ResultCode::FailStore, format!("{:?}", e)));
+                if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
+                    error!("update_ts_number: badges_put: err={:?}", e);
+                    return Err((ResultCode::FailStore, format!("{:?}", e)));
+                }
+            } else {
+                error!("not found ts_number in {}", data_request_pass.get_id());
             }
         }
 
         if is_update_family {
-            let cnj = json!({
-            "BadgeID": badge_id,
-            "LastName": cardholder_family,
-            "CustomBadgeFields": [
-            {
-                "ColumnName": "BADGE_LNAME",
-                "TextValue": cardholder_family
-            } ]
-            });
-            if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
-                error!("update_family: badges_put: err={:?}", e);
-                return Err((ResultCode::FailStore, format!("{:?}", e)));
+            if let Some(cf) = cardholder_family {
+                let cf = cf.trim();
+                let cnj = json!({
+                "BadgeID": badge_id,
+                "LastName": cf,
+                "CustomBadgeFields": [
+                {
+                    "ColumnName": "BADGE_LNAME",
+                    "TextValue": cf
+                } ]
+                });
+                if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
+                    error!("update_family: badges_put: err={:?}", e);
+                    return Err((ResultCode::FailStore, format!("{:?}", e)));
+                }
+            } else {
+                error!("not found cardholder_family in {}", data_request_pass.get_id());
             }
         }
 

@@ -94,6 +94,7 @@ pub fn get_individual_from_predicate(module: &mut Module, src: &mut Individual, 
 }
 
 pub fn clear_card_and_set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
+    indv.parse_all();
     indv.clear("mnd-s:briefingDate");
     indv.clear("mnd-s:hasAccessLevel");
     indv.clear("mnd-s:passEquipment");
@@ -116,6 +117,7 @@ pub fn clear_card_and_set_err(module: &mut Module, sys_ticket: &str, indv: &mut 
 }
 
 pub fn set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
+    indv.parse_all();
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
@@ -302,7 +304,7 @@ pub fn equipment_to_field_list(sj: &mut Vec<Value>, src_indv: &mut Individual) {
 
         let sji = json!({
         "ColumnName": format!("BADGE_TOOL{:02}", idx + 1),
-        "TextValue": val
+        "TextValue": val.trim()
         });
         sj.push(sji);
 
@@ -327,7 +329,7 @@ pub fn add_txt_to_fields(list: &mut Vec<Value>, fname: &str, src: Option<String>
         let sji = json!({
         "ColumnName": fname,
         "FieldType": 2,
-        "TextValue": val
+        "TextValue": val.trim()
         });
 
         list.push(sji);
