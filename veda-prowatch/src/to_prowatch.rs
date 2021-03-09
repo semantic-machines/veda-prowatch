@@ -79,6 +79,10 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
     add_txt_to_fields(&mut custom_fields, "BADGE_CLEARANCE_ORDER_DATE", Some(i64_to_str_date_mdy(Some(get_now_00_00_00().timestamp()))));
     add_txt_to_fields(&mut custom_fields, "BADGE_FNAME", Some(first_name.to_owned()));
     add_txt_to_fields(&mut custom_fields, "BADGE_LNAME", Some(last_name.to_owned()));
+    let kpp_numbers = set_str_from_field_field(module, indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+    if !kpp_numbers.is_empty() {
+        add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
+    }
 
     let reqj = json!({
         "LastName": last_name,
@@ -318,9 +322,9 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             }
 
             if is_tmp_update_access_levels {
-                get_access_levels(module, &mut indv_p, "mnd-s:hasTemporaryAccessLevel", &mut access_levels);
+                set_vec_from_field_field(module, &mut indv_p, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             } else {
-                get_access_levels(module, &mut indv_p, "mnd-s:hasAccessLevel", &mut access_levels);
+                set_vec_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             }
 
             let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, indv_p.get_first_datetime("v-s:dateToPlan"));
@@ -372,7 +376,7 @@ pub fn delete_from_prowatch(_module: &mut Module, _ctx: &mut Context, _indv: &mu
 
 fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut access_levels = vec![];
-    get_access_levels(module, src, "mnd-s:hasAccessLevel", &mut access_levels);
+    set_vec_from_field_field(module, src, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
     let sj = access_levels_to_json_for_new(access_levels);
 
     let wcard_number = src.get_first_literal("mnd-s:cardNumber");

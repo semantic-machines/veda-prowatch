@@ -12,6 +12,7 @@ use crate::common::{
 };
 
 pub fn sync_data_from_prowatch(module: &mut Module, ctx: &mut Context, src_indv: &mut Individual) -> ResultCode {
+    src_indv.parse_all();
     let mut asc_indvs = vec![];
 
     if src_indv.get_first_literal("mnd-s:hasPassKind").is_some() {

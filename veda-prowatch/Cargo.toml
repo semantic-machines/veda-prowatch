@@ -15,6 +15,6 @@ base64 = "0.13.0"
 url = "2.2.0"
 
 v_queue = "0.1"
-v_module = { package = "v-common-module", version = "0.1.22" }
+v_module = { package = "v-common-module", version = "0.1.23" }
 
 prowatch_client = { path = "../prowatch-client" }

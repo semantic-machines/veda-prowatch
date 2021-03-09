@@ -129,18 +129,37 @@ pub fn set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err
     }
 }
 
-pub fn get_access_levels(module: &mut Module, indv: &mut Individual, level_predicate: &str, access_levels: &mut Vec<String>) {
-    if let Some(access_levels_uris) = indv.get_literals(level_predicate) {
-        for l in access_levels_uris {
+pub fn set_vec_from_field_field(module: &mut Module, indv: &mut Individual, predicate: &str, innner_predicate: &str, out_data: &mut Vec<String>) {
+    if let Some(uris) = indv.get_literals(predicate) {
+        for l in uris {
             if let Some(mut indv_c) = module.get_individual_h(&l) {
-                if let Some(al) = indv_c.get_first_literal("v-s:registrationNumberAdd") {
-                    access_levels.push(al);
+                if let Some(al) = indv_c.get_first_literal(innner_predicate) {
+                    out_data.push(al);
                 }
             } else {
                 error!("not found {}", l);
             }
         }
     }
+}
+
+pub fn set_str_from_field_field(module: &mut Module, indv: &mut Individual, predicate: &str, innner_predicate: &str) -> String {
+    let mut out_data = String::new();
+    if let Some(uris) = indv.get_literals(predicate) {
+        for l in uris {
+            if let Some(mut indv_c) = module.get_individual_h(&l) {
+                if let Some(al) = indv_c.get_first_literal(innner_predicate) {
+                    if !out_data.is_empty() {
+                        out_data.push(' ');
+                    }
+                    out_data.push_str(&al);
+                }
+            } else {
+                error!("not found {}", l);
+            }
+        }
+    }
+    out_data
 }
 
 pub fn get_now_00_00_00() -> NaiveDateTime {

@@ -569,6 +569,7 @@ inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
 subdivision_name = [P]["v-s:supplier"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 request_date = текущая дата без времени в формате mm.dd.yyyy
+kpp numbers = собрать из значений через пробел в [P].mnd-s:hasAccessLevel.mnd-s:accessLevelCheckpoints (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
 
 {
     "LastName": "lastname",
@@ -690,7 +691,12 @@ request_date = текущая дата без времени в формате m
             "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
             "FieldType": 2,
             "TextValue": "request_date"
-        }
+        },
+        {
+            "ColumnName": "BADGE_CAR_ENTRY_POINT",
+            "FieldType": 2,
+            "TextValue": "{kpp numbers}"
+        } 
     ]
 }
 
@@ -709,6 +715,7 @@ inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
 subdivision_name = [P]["v-s:supplier"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 request_date = текущая дата без времени в формате mm.dd.yyyy
+kpp numbers = собрать из значений через пробел в [P].mnd-s:hasAccessLevel.mnd-s:accessLevelCheckpoints (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
 
 {
     "LastName": "lastname",
@@ -826,7 +833,12 @@ request_date = текущая дата без времени в формате m
             "ColumnName": "BADGE_CAR_PLATE",
             "FieldType": 2,
             "TextValue": "firstname"
-        }
+        },
+        {
+            "ColumnName": "BADGE_CAR_ENTRY_POINT",
+            "FieldType": 2,
+            "TextValue": "{kpp numbers}"
+        } 
     ]
 }
 

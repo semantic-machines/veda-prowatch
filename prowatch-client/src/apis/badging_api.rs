@@ -548,7 +548,7 @@ impl BadgingApi for BadgingApiClient {
         };
         req_builder = req_builder.json(&body);
 
-        println!("{}", body.to_string());
+        //println!("{}", body.to_string());
         // send request
         let req = req_builder.build()?;
 
@@ -636,7 +636,7 @@ impl BadgingApi for BadgingApiClient {
         };
         req_builder = req_builder.json(&body);
 
-        println!("body={}", body.to_string());
+        //println!("body={}", body.to_string());
 
         // send request
         let req = req_builder.build()?;
