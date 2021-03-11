@@ -173,6 +173,22 @@ post http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}}/clearcodes
     }
 ]
 
+- обновляем текстовые поля кпп владельца при наличии
+put http://syk-vs149.mp.local:8734/pwapi/badges
+
+BadgeID = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:winpakCardRecordId"]
+kpp_numbers = собрать из значений через пробел в [C]["mnd-s:hasAccesslevel"]["mnd-s:accessLevelCheckpoints"] (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
+
+{
+    "BadgeID": "BadgeID",
+    "CustomBadgeFields": [
+        {
+            "ColumnName": "BADGE_CAR_ENTRY_POINT",
+            "FieldType": 2,
+            "TextValue": "kpp_numbers"
+        } 
+    ]
+}
 
 #-------------------------------------------------------------------------------------------------
 
@@ -397,7 +413,7 @@ mnd-s:winpakCardRecordId - BadgeID
 
 ####Получаем данные по карте
 Запрос выполняется по результату получения данных по держателю (требуется id держателя). Для каждого найденного держателя [R] выполнить запрос данных карт.
-Или при сохранении индивида класса mnd-s:ACSRecord выполнять запрос данных карты из PW. Как по твоему мнению будет лучше в реализации
+Или при сохранении индивида класса mnd-s:ACSRecord выполнять запрос данных карты из PW.
 
 BadgeID = [R]["mnd-s:winpakCardRecordId"]
 
@@ -482,13 +498,14 @@ post http://syk-vs149.mp.local:8734/pwapi/badges/cards
     ]
 }
 
-- обновляем оборудование и срок действия держателя
+- обновляем оборудование и срок действия держателя + кпп текстом
 
 Заменяем все поля для оборудования в держателе карты
 
 BadgeID = [R]["mnd-s:winpakCardRecordId"]
 dateTo = [P]["v-s:dateToFact"]
 tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно и вписать в BADGE_TOOL01 - BADGE_TOOL11 соответственно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
+kpp_numbers = собрать из значений через пробел в [C]["mnd-s:hasAccesslevel"]["mnd-s:accessLevelCheckpoints"] (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
 
 если [R]["mnd-s:cardNumber"] не пусто, то исключить из запроса поле "ExpireDate": "dateTo" (не изменяем срок действия человека, если есть действующая карта)
 
@@ -505,7 +522,12 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
         {
             "ColumnName": "BADGE_TOOL02",
             "TextValue": "tool11"
-        }
+        },
+         {
+            "ColumnName": "BADGE_CAR_ENTRY_POINT",
+            "FieldType": 2,
+            "TextValue": "kpp_numbers"
+        } 
     ]
 }
 
@@ -838,7 +860,7 @@ kpp numbers = собрать из значений через пробел в [P
             "ColumnName": "BADGE_CAR_ENTRY_POINT",
             "FieldType": 2,
             "TextValue": "{kpp numbers}"
-        } 
+        }
     ]
 }
 

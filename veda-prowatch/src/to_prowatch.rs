@@ -101,7 +101,7 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
             if let Some(o) = r.as_object() {
                 if let Some(id) = o.get("BadgeID") {
                     if let Some(s) = id.as_str() {
-                        info!("success add {:?} data, id={}, new badge id = {}", pass_type, indv_p.get_id(), s);
+                        info!("to PW: add {:?} data, id={}, new badge id = {}", pass_type, indv_p.get_id(), s);
                         new_badge_id = Some(s.to_owned());
                     }
                 }
@@ -158,15 +158,20 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 error!("update_prowatch_data::add_card_with_access_to_pw, error={:?}", e);
             }
 
-            let mut sj = vec![];
-            equipment_to_field_list(&mut sj, &mut indv_p);
+            let mut cbf = vec![];
+            equipment_to_field_list(&mut cbf, &mut indv_p);
 
             let js = if !indv_r.get_first_literal("mnd-s:cardNumber").unwrap_or_default().is_empty() {
-                json!({ "BadgeID": badge_id, "CustomBadgeFields": sj })
+                json!({ "BadgeID": badge_id, "CustomBadgeFields": cbf })
             } else {
                 let date_to = indv_p.get_first_datetime("v-s:dateToFact");
-                json!({ "BadgeID": badge_id, "ExpireDate": i64_to_str_date_ymdthms (date_to), "CustomBadgeFields": sj })
+                json!({ "BadgeID": badge_id, "ExpireDate": i64_to_str_date_ymdthms (date_to), "CustomBadgeFields": cbf })
             };
+
+            let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+            if !kpp_numbers.is_empty() {
+                add_txt_to_fields(&mut cbf, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
+            }
 
             if let Err(e) = ctx.pw_api_client.badging_api().badges_put(js) {
                 error!("badges_put: err={:?}", e);
@@ -275,8 +280,10 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                                     }
                                 ] } );
                 if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
-                    error!("update_ts_number: badges_put: err={:?}", e);
+                    error!("to PW: update_ts_number: badges_put: err={:?}", e);
                     return Err((ResultCode::FailStore, format!("{:?}", e)));
+                } else {
+                    info!("to PW: badges_put(ts_number), badge_id={}", badge_id);
                 }
             } else {
                 error!("not found ts_number in {}", data_request_pass.get_id());
@@ -296,8 +303,10 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 } ]
                 });
                 if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
-                    error!("update_family: badges_put: err={:?}", e);
+                    error!("to PW: update_family: badges_put: err={:?}", e);
                     return Err((ResultCode::FailStore, format!("{:?}", e)));
+                } else {
+                    info!("to PW: badges_put(family), badge_id={}", badge_id);
                 }
             } else {
                 error!("not found cardholder_family in {}", data_request_pass.get_id());
@@ -308,16 +317,20 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             let mut sj = vec![];
             equipment_to_field_list(&mut sj, &mut indv_p);
             if let Err(e) = ctx.pw_api_client.badging_api().badges_put(json!({ "BadgeID": badge_id, "CustomBadgeFields": sj })) {
-                error!("badges_put: err={:?}", e);
+                error!("to PW: badges_put: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
+            } else {
+                info!("to PW: badges_put(equipment), badge_id={}", badge_id);
             }
         }
 
         if is_update_access_levels {
             if !is_update_access_levels_without_clean {
                 if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_delete_access_levels(&card_number) {
-                    error!("badges_cards_card_delete_access_levels: err={:?}", e);
+                    error!("to PW: badges_cards_card_delete_access_levels: err={:?}", e);
                     return Err((ResultCode::FailStore, format!("{:?}", e)));
+                } else {
+                    info!("to PW: badges_cards_card_delete_access_levels, card_number={}", card_number);
                 }
             }
 
@@ -329,8 +342,28 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
 
             let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, indv_p.get_first_datetime("v-s:dateToPlan"));
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj)) {
-                error!("badges_cards_card_update_access_levels: err={:?}", e);
+                error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
+            } else {
+                info!("to PW: badges_cards_card_update_access_levels, card_number={}", card_number);
+            }
+
+            let mut custom_fields = vec![];
+            let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+            if !kpp_numbers.is_empty() {
+                add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
+            }
+
+            let reqj = json!({
+                "BadgeID": badge_id,
+                "CustomBadgeFields": custom_fields
+            });
+
+            if let Err(e) = ctx.pw_api_client.badging_api().badges_put(reqj) {
+                error!("to PW: add_card_with_access_to_pw, put CustomBadgeFields: err={:?}", e);
+                return Err((ResultCode::FailStore, format!("{:?}", e)));
+            } else {
+                info!("to PW: add_card_with_access_to_pw, put CustomBadgeFields, badge_id={}", badge_id);
             }
         }
 
@@ -353,8 +386,10 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 "ExpireDate": i64_to_str_date_ymdthms (date_to)
             });
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_put(cnj) {
-                error!("badges_cards_card: err={:?}", e);
+                error!("to PW: badges_cards_card: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
+            } else {
+                info!("to PW: badges_cards_put(equipment), card_number={}", card_number);
             }
 
             let sj = json!({
@@ -362,8 +397,10 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 "ExpireDate": i64_to_str_date_ymdthms (date_to)
             });
             if let Err(e) = ctx.pw_api_client.badging_api().badges_put(sj) {
-                error!("badges_cards: err={:?}", e);
+                error!("to PW: badges_cards: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
+            } else {
+                info!("to PW: badges_put(ExpireDate), badge_id={}", badge_id);
             }
         }
     }
@@ -377,7 +414,7 @@ pub fn delete_from_prowatch(_module: &mut Module, _ctx: &mut Context, _indv: &mu
 fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut access_levels = vec![];
     set_vec_from_field_field(module, src, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
-    let sj = access_levels_to_json_for_new(access_levels);
+    let alj = access_levels_to_json_for_new(access_levels);
 
     let wcard_number = src.get_first_literal("mnd-s:cardNumber");
     if wcard_number.is_none() {
@@ -398,14 +435,34 @@ fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: 
     "Company": {
         "CompanyID": "0x004842343236434238382D443536302D3433"
         },
-    "ClearanceCodes": sj
+    "ClearanceCodes": alj
      });
 
     if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_post(cnj) {
-        error!("badges_cards_card: err={:?}", e);
+        error!("to PW: add_card_with_access_to_pw: err={:?}", e);
         return Err((ResultCode::FailStore, format!("{:?}", e)));
+    } else {
+        info!("to PW: add_card_with_access_to_pw, badge_id={}", badge_id);
     }
+    /*
+        let mut custom_fields = vec![];
+        let kpp_numbers = set_str_from_field_field(module, src, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+        if !kpp_numbers.is_empty() {
+            add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
+        }
 
+        let reqj = json!({
+            "BadgeID": badge_id,
+            "CustomBadgeFields": custom_fields
+        });
+
+        if let Err(e) = ctx.pw_api_client.badging_api().badges_put(reqj) {
+            error!("add_card_with_access_to_pw, put CustomBadgeFields: err={:?}", e);
+            return Err((ResultCode::FailStore, format!("{:?}", e)));
+        } else {
+            info!("success add_card_with_access_to_pw, put CustomBadgeFields, badge_id={}", badge_id);
+        }
+    */
     Ok(())
 }
 
@@ -420,9 +477,9 @@ fn add_photo_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: 
             let msg_base64 = encode(f);
 
             if let Err(e) = ctx.pw_api_client.badging_api().badges_badge_id_photo_post(&badge_id, msg_base64) {
-                error!("update_photo: badges_put: err={:?}", e);
+                error!("to PW: update_photo: badges_put: err={:?}", e);
             } else {
-                info!("success update photo, {}", src.get_id())
+                info!("to PW: update photo, {}", src.get_id())
             }
         }
     }
