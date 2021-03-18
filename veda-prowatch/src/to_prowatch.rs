@@ -1,5 +1,6 @@
 use crate::common::*;
 use base64::encode;
+use prowatch_client::apis::Error;
 use serde_json::json;
 use std::fs;
 use v_module::module::Module;
@@ -7,6 +8,105 @@ use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
 use v_module::v_onto::datatype::Lang;
 use v_module::v_onto::individual::Individual;
+
+pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
+    let mut indv_r = get_individual_from_predicate(module, indv_e, "v-s:backwardTarget")?;
+    let r_type = indv_r.get_first_literal("rdf:type").unwrap_or_default();
+
+    if r_type == "mnd-s:ACSRecord" {
+        if let Ok(mut indv_x) = get_individual_from_predicate(module, &mut indv_r, "v-s:backwardTarget") {
+            if let Some(indv_p_id) = indv_x.get_first_literal("v-s:backwardTarget") {
+                if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
+                    for el in ctx.pw_api_client.badging_api().badges_badge_id_cards(&badge_id).unwrap_or_default() {
+                        if let Some(card_number) = get_str_from_value(&el, "CardNumber") {
+                            if need_lock {
+                                set_card_status(ctx, card_number, 1)?;
+                            } else {
+                                let s_expire_date = get_str_from_value(&el, "ExpireDate").unwrap_or_default();
+                                if let Some(expire_date) = str_date_to_i64(s_expire_date) {
+                                    if expire_date > get_now_00_00_00().timestamp() {
+                                        set_card_status(ctx, card_number, 0)?;
+                                    }
+                                } else {
+                                    return Err((ResultCode::Ok, format!("lock_card: fail parse expire_date={}, card_number={} ", s_expire_date, card_number)));
+                                }
+                            }
+                        }
+                    }
+
+                    indv_e.add_uri("v-s:backwardTarget", &indv_p_id);
+                } else {
+                    return Err((ResultCode::Ok, format!("lock_card: not found mnd-s:winpakCardRecordId in {}", indv_r.get_id())));
+                }
+            } else {
+                return Err((ResultCode::Ok, format!("lock_card: fail to read indv v-s:backwardTarget in {}", indv_x.get_id())));
+            }
+        } else {
+            return Err((ResultCode::Ok, format!("lock_card: fail to read indv v-s:backwardTarget in {}", indv_r.get_id())));
+        }
+    } else {
+        return Err((ResultCode::Ok, format!("rdf:type is not mnd-s:ACSRecord, {}", indv_e.get_id())));
+    }
+
+    Ok(())
+}
+
+pub fn lock_holder(module: &mut Module, ctx: &mut Context, pass_type: PassType, indv_s: &mut Individual) -> Result<(), (ResultCode, String)> {
+    let (_, wbadges) = get_badge_use_request_indv(module, ctx, Some(pass_type.clone()), indv_s);
+    if let Err(e) = wbadges {
+        error!("badges: err={:?}", e);
+        return match e {
+            Error::Io(_) => return Err((ResultCode::ConnectError, format!("not found, err={:?}", e))),
+            _ => Err((ResultCode::UnprocessableEntity, format!("not found, err={:?}", e))),
+        };
+    }
+
+    let tax_id = indv_s.get_first_literal("v-s:taxId").unwrap_or_default();
+    let birthday = i64_to_str_date_ymdthms(indv_s.get_first_datetime("v-s:birthday"));
+
+    let mut asc_indvs = vec![];
+    for badge in wbadges.unwrap() {
+        let fields = get_custom_badge_as_list(&badge);
+
+        let mut is_next = false;
+
+        if pass_type == PassType::Human {
+            if let Some(jv) = fields.get("BADGE_BIRTHDATE") {
+                if let Some(v) = jv.as_str() {
+                    if v == birthday {
+                        warn!("fields={:?}", fields);
+                        is_next = true;
+                    }
+                }
+            }
+        } else {
+            is_next = true;
+        }
+
+        if let Some(btaxid) = fields.get("BADGE_COMPANY_ID") {
+            if let Some(t) = btaxid.as_str() {
+                if t == tax_id && is_next {
+                    let acs_record = create_asc_record(&badge, indv_s.get_id());
+                    asc_indvs.push(acs_record);
+                }
+            }
+        }
+    }
+
+    if asc_indvs.is_empty() {
+        return Err((ResultCode::Ok, "Держатель не найден".to_owned()));
+    }
+
+    for el in asc_indvs.iter_mut() {
+        let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, el);
+        if res.result == ResultCode::Ok {
+            info!("success update, uri={}", el.get_id());
+        } else {
+            return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", el.get_id())));
+        }
+    }
+    Ok(())
+}
 
 pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut new_badge_id = None;
@@ -120,30 +220,6 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
     add_card_with_access_to_pw(module, ctx, &badge_id, indv_p)
 }
 
-pub fn set_update_status(module: &mut Module, ctx: &mut Context, indv: &mut Individual, res: Result<(), (ResultCode, String)>) -> ResultCode {
-    indv.parse_all();
-    if let Err((sync_res, info)) = res {
-        if sync_res == ResultCode::ConnectError {
-            return sync_res;
-        }
-        indv.set_uri("v-s:hasStatus", "v-s:StatusRejected");
-        set_err(module, &ctx.sys_ticket, indv, &info);
-        return sync_res;
-    }
-
-    indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
-    indv.set_uri("v-s:hasStatus", "v-s:StatusAccepted");
-    indv.clear("v-s:errorMessage");
-
-    let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, indv);
-    if res.result != ResultCode::Ok {
-        error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
-    } else {
-        info!("success update, uri={}", indv.get_id());
-    }
-    ResultCode::Ok
-}
-
 pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut indv_p = get_individual_from_predicate(module, indv, "v-s:backwardTarget")?;
     let p_type = indv_p.get_first_literal("rdf:type").unwrap_or_default();
@@ -183,14 +259,7 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 if has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd" || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6" {
                     if let Some(v) = indv_r.get_literals("mnd-s:cardNumber") {
                         for card_number in v {
-                            let cnj = json!({
-                                "CardNumber": card_number,
-                                "CardStatus": 1,
-                            });
-                            if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_put(cnj) {
-                                error!("block cards if exist temp card: badges_cards_card: err={:?}", e);
-                                return Err((ResultCode::FailStore, format!("{:?}", e)));
-                            }
+                            set_card_status(ctx, &card_number, 1)?;
                         }
                     }
                 }

@@ -1,0 +1,93 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix owl: <http://www.w3.org/2002/07/owl#>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+@prefix v-s: <http://semantic-machines.com/veda/veda-schema/> .
+@prefix mnd-s: <http://semantic-machines.com/veda/mondi-schema/>.
+@prefix d: <http://semantic-machines.com/veda/veda-data/>.
+@prefix cfg: <http://semantic-machines.com/veda/config/> .
+
+<http://semantic-machines.com/veda/mondi-testdata-pw>
+  rdf:type owl:Ontology ;
+  v-s:loadPriority 10 ;
+.
+
+#1. Запрос данных
+
+#- по автомобилю
+d:test_auto
+  rdf:type mnd-s:SourceDataRequestForPassByNames ;
+  mnd-s:passVehicleRegistrationNumber "о661хм11" ;
+  v-s:taxId "4345069882" ;
+  v-s:tag "AutoWithCompany" ;
+.
+
+#- по человеку
+d:test_human
+  rdf:type mnd-s:SourceDataRequestForPassByNames ;
+  v-s:firstName "Андрей"@ru, "Andrey"@en ;
+  v-s:lastName "Бычин"@ru, "Bychin"@en ;
+  v-s:middleName "Николаевна"@ru ;
+  v-s:middleName "Владимирович"@ru ;
+  v-s:birthday "1976-05-03T00:00:00.000Z"^^xsd:dateTime;
+  v-s:taxId "1121001280" ;
+  v-s:tag "HumanWithCompany" ;
+.
+
+
+#2. Блокировка/разблокировка
+
+#общие объекты
+
+d:test_block_request
+  mnd-s:hasLockingPeriod d:lockingPeriod_7d ;
+  mnd-s:hasSourceDataRequestForPassByNames d:test_source ;
+  rdf:type mnd-s:PassBlockingRequest ;
+  v-s:dateFrom "2021-03-04T08:07:30Z"^^xsd:dateTime ;
+  v-s:dateTo "2021-03-10T00:00:00Z"^^xsd:dateTime ;
+  v-s:hasStatus v-s:StatusExecution ;
+  v-s:responsibleOrganization d:org_RU1121001280 ;
+.
+
+d:test_source
+  rdf:type mnd-s:SourceDataRequestForPassByNames ;
+  v-s:backwardTarget d:test_block_request ;
+  v-s:backwardProperty mnd-s:hasSourceDataRequestForPassByNames ;
+  v-s:canRead true ;
+  v-s:lastName "ТестОФ"@ru ;
+  v-s:firstName "ТестОФ"@ru ;
+  v-s:middleName "ТестОФ"@ru ;
+  v-s:tag "HumanWithCompany" ;
+  v-s:birthday "2021-03-01T00:00:00.000Z"^^xsd:dateTime;
+  v-s:taxId "1121001280" ;
+  mnd-s:hasACSRecord d:asc_test ;
+.
+
+d:asc_test
+  mnd-s:winpakCardRecordId "0x002937304644344343452D393944332D3432" ;
+  rdf:type mnd-s:ACSRecord ;
+  rdfs:comment "Веда тест"@ru ;
+  v-s:backwardProperty mnd-s:hasACSRecord ;
+  v-s:backwardTarget d:test_source ;
+  v-s:canRead true ;
+  v-s:created "2021-03-16T08:38:56Z"^^xsd:dateTime ;
+  v-s:description "ТестОФ ТестОФ ТестОФ"@ru ;
+.
+
+#БЛОКИРОВКА
+d:test_handler_lock
+  rdf:type v-s:ExternalModuleHandler ;
+  v-s:moduleLabel "prowatch lock" ;
+  v-s:backwardTarget d:asc_test ;
+  v-s:backwardProperty v-s:hasExternalModuleHandler ;
+  v-s:canRead true ;
+.
+
+#РАЗБЛОКИРОВКА
+d:test_handler_unlock
+  rdf:type v-s:ExternalModuleHandler ;
+  v-s:moduleLabel "prowatch unlock" ;
+  v-s:backwardTarget d:asc_test ;
+  v-s:backwardProperty v-s:hasExternalModuleHandler ;
+  v-s:canRead true ;
+.

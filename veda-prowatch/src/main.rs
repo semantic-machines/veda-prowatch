@@ -5,9 +5,9 @@ mod common;
 mod from_prowatch;
 mod to_prowatch;
 
-use crate::common::{load_access_level_dir, Context};
+use crate::common::{load_access_level_dir, set_update_status, Context, PassType};
 use crate::from_prowatch::sync_data_from_prowatch;
-use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, set_update_status, update_prowatch_data};
+use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, lock_holder, lock_unlock_card, update_prowatch_data};
 use prowatch_client::apis::client::PWAPIClient;
 use prowatch_client::apis::configuration::Configuration;
 use std::thread;
@@ -142,15 +142,27 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
 
     for itype in itypes {
         if itype == "mnd-s:SourceDataRequestForPass" {
-            let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
-            if res == ResultCode::ConnectError {
-                return Err(res);
-            }
+            let _res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
         } else if itype == "mnd-s:SourceDataRequestForPassByNames" {
             // ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД ?
-            let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
-            if res == ResultCode::ConnectError {
-                return Err(res);
+            if let Some(tag) = new_state_indv.get_first_literal("v-s:tag") {
+                let upd_res = if tag == "AutoWithCompany" {
+                    lock_holder(module, ctx, PassType::Vehicle, &mut new_state_indv)
+                } else if tag == "HumanWithCompany" {
+                    lock_holder(module, ctx, PassType::Human, &mut new_state_indv)
+                } else {
+                    Err((ResultCode::Ok, "unknown v-s:tag".to_owned()))
+                };
+
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
+                if res == ResultCode::ConnectError {
+                    return Err(res);
+                }
+            } else {
+                let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
+                if res == ResultCode::ConnectError {
+                    return Err(res);
+                }
             }
         } else if itype == "v-s:ExternalModuleHandler" {
             let module_label = new_state_indv.get_first_literal("v-s:moduleLabel").unwrap_or_default();
@@ -174,6 +186,20 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
 
             if module_label == "winpak pe44 delete" {
                 let res = delete_from_prowatch(module, ctx, &mut new_state_indv);
+                if res == ResultCode::ConnectError {
+                    return Err(res);
+                }
+            }
+            if module_label == "prowatch lock" {
+                let upd_res = lock_unlock_card(module, ctx, &mut new_state_indv, true);
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
+                if res == ResultCode::ConnectError {
+                    return Err(res);
+                }
+            }
+            if module_label == "prowatch unlock" {
+                let upd_res = lock_unlock_card(module, ctx, &mut new_state_indv, false);
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }

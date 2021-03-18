@@ -1,10 +1,13 @@
-use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::offset::LocalResult::Single;
+use chrono::DateTime;
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use prowatch_client::apis::client::PWAPIClient;
 use prowatch_client::apis::Error;
 use serde_json::json;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::ops::Add;
+use std::ops::{Add, Sub};
+use uuid::Uuid;
 use v_module::module::Module;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
@@ -14,7 +17,7 @@ use v_module::v_onto::onto::Onto;
 use v_module::v_search::common::FTQuery;
 use voca_rs::chop;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum PassType {
     Vehicle,
     Human,
@@ -232,26 +235,23 @@ pub fn str_value2indv(src_val: &Value, src_field: &str, dest_indv: &mut Individu
 }
 
 pub fn get_pass_type(indv_p: &mut Individual) -> PassType {
-    if let Some(has_kind_for_pass) = indv_p.get_first_literal("mnd-s:hasPassKind") {
-        if has_kind_for_pass == "d:c94b6f98986d493cae4a3a37249101dc"
-            || has_kind_for_pass == "d:5f5be080f1004af69742bc574c030609"
-            || has_kind_for_pass == "d:1799f1e110054b5a9ef819754b0932ce"
-        {
+    if let Some(tag) = indv_p.get_first_literal("v-s:tag") {
+        if tag == "Auto" {
             return PassType::Vehicle;
         }
-        if has_kind_for_pass == "d:ece7e741557e406bb996809163810c6e"
-            || has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd"
-            || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6"
-            || has_kind_for_pass == "d:ih7mpbsuu6xxmy7ouqlyhfqyua"
-        {
+        if tag == "Human" {
             return PassType::Human;
         }
     }
     PassType::Unknown
 }
 
-pub fn get_badge_use_request_indv(module: &mut Module, ctx: &mut Context, indv_p: &mut Individual) -> (PassType, Result<Vec<Value>, Error>) {
-    let tpass: PassType = get_pass_type(indv_p);
+pub fn get_badge_use_request_indv(module: &mut Module, ctx: &mut Context, pass_type: Option<PassType>, indv_p: &mut Individual) -> (PassType, Result<Vec<Value>, Error>) {
+    let tpass: PassType = if let Some(pt) = pass_type {
+        pt
+    } else {
+        get_pass_type(indv_p)
+    };
 
     if tpass != PassType::Unknown {
         let res_badge = if tpass == PassType::Vehicle {
@@ -400,4 +400,177 @@ pub fn access_levels_to_json_for_new(access_levels: Vec<String>) -> Vec<Value> {
         sj.push(sji);
     }
     sj
+}
+
+pub fn get_custom_badge_as_list(el: &Value) -> Map<String, Value> {
+    let mut fields: Map<String, Value> = Map::default();
+    if let Some(v) = el.get("CustomBadgeFields") {
+        if let Some(ar) = v.as_array() {
+            for c_el in ar {
+                let mut field_type = 0;
+                if let Some(t) = c_el.get("FieldType") {
+                    if let Some(d) = t.as_i64() {
+                        field_type = d;
+                    }
+                }
+
+                if let Some(cn) = c_el.get("ColumnName") {
+                    let f_name = cn.as_str().unwrap_or_default();
+
+                    if field_type == 2 {
+                        if let Some(v) = c_el.get("TextValue") {
+                            fields.insert(f_name.to_owned(), v.to_owned());
+                        }
+                    } else if field_type == 0 {
+                        if let Some(v) = c_el.get("DateValue") {
+                            fields.insert(f_name.to_owned(), v.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fields
+}
+
+pub fn create_asc_record(el: &Value, backward_id: &str) -> Individual {
+    let mut acs_record = Individual::default();
+    acs_record.set_id(&("d:asc_".to_owned() + &Uuid::new_v4().to_string()));
+    acs_record.set_uri("rdf:type", "mnd-s:ACSRecord");
+    acs_record.set_uri("v-s:backwardProperty", "mnd-s:hasACSRecord");
+    acs_record.set_uri("v-s:backwardTarget", backward_id);
+    acs_record.set_bool("v-s:canRead", true);
+
+    set_badge_to_indv(&el, &mut acs_record);
+
+    acs_record
+}
+
+pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
+    if !el.is_object() {
+        return;
+    }
+
+    if let Some(v) = el.get("BadgeID") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("mnd-s:winpakCardRecordId", &s, Lang::NONE);
+        }
+    }
+
+    if let Some(s) = concat_fields(&["LastName", "FirstName", "MiddleName"], el.as_object(), " ") {
+        dest.set_string("v-s:description", &s, Lang::RU);
+    }
+
+    let fields = get_custom_badge_as_list(el);
+    if let Some(s) = concat_fields(&["BADGE_COMPANY_NAME", "BADGE_DEPARTMENT", "BADGE_TITLE"], Some(&fields), " ") {
+        dest.set_string("rdfs:comment", &s, Lang::RU);
+    }
+
+    if let Some(d) = fields.get("BADGE_BIRTHDATE") {
+        dest.clear("v-s:birthday");
+        if let Some(d) = d.as_str() {
+            dest.add_datetime_from_str("v-s:birthday", d);
+        }
+    }
+
+    if let Some(v) = fields.get("BADGE_ID") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("v-s:tabNumber", &s, Lang::NONE);
+        }
+    }
+
+    if let Some(d) = fields.get("BADGE_SAFETY_INST_DATE") {
+        dest.clear("mnd-s:briefingDate");
+        if let Some(d) = d.as_str() {
+            dest.add_datetime_from_str("mnd-s:briefingDate", d);
+        }
+    }
+
+    if let Some(s) = concat_fields(
+        &[
+            "BADGE_TOOL01",
+            "BADGE_TOOL02",
+            "BADGE_TOOL03",
+            "BADGE_TOOL04",
+            "BADGE_TOOL05",
+            "BADGE_TOOL06",
+            "BADGE_TOOL07",
+            "BADGE_TOOL08",
+            "BADGE_TOOL09",
+            "BADGE_TOOL10",
+            "BADGE_TOOL11",
+        ],
+        Some(&fields),
+        "\n",
+    ) {
+        dest.set_string("mnd-s:passEquipment", &s, Lang::RU);
+    }
+}
+
+pub fn set_card_status(ctx: &mut Context, card_number: &str, card_status: i32) -> Result<(), (ResultCode, String)> {
+    let cnj = json!({
+        "CardNumber": card_number,
+        "CardStatus": card_status,
+    });
+    if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_put(cnj) {
+        error!("block cards if exist temp card: badges_cards_card: err={:?}", e);
+        return Err((ResultCode::FailStore, format!("{:?}", e)));
+    }
+    Ok(())
+}
+
+pub fn set_update_status(module: &mut Module, ctx: &mut Context, indv: &mut Individual, res: Result<(), (ResultCode, String)>) -> ResultCode {
+    indv.parse_all();
+    if let Err((sync_res, info)) = res {
+        if sync_res == ResultCode::ConnectError {
+            return sync_res;
+        }
+        indv.set_uri("v-s:hasStatus", "v-s:StatusRejected");
+        set_err(module, &ctx.sys_ticket, indv, &info);
+        return sync_res;
+    }
+
+    indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
+    indv.set_uri("v-s:hasStatus", "v-s:StatusAccepted");
+    indv.clear("v-s:errorMessage");
+
+    let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, indv);
+    if res.result != ResultCode::Ok {
+        error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
+    } else {
+        info!("success update, uri={}", indv.get_id());
+    }
+    ResultCode::Ok
+}
+
+pub fn str_date_to_i64(value: &str) -> Option<i64> {
+    if value.contains('Z') {
+        if let Ok(v) = DateTime::parse_from_rfc3339(&value) {
+            return Some(v.timestamp());
+        } else {
+            error!("fail parse [{}] to datetime", value);
+        }
+    } else {
+        let ndt;
+        if value.len() == 10 {
+            if value.contains('.') {
+                ndt = NaiveDateTime::parse_from_str(&(value.to_owned() + "T00:00:00"), "%d.%m.%YT%H:%M:%S");
+            } else {
+                ndt = NaiveDateTime::parse_from_str(&(value.to_owned() + "T00:00:00"), "%Y-%m-%dT%H:%M:%S");
+            }
+        } else {
+            ndt = NaiveDateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S")
+        }
+
+        if let Ok(v) = ndt {
+            if let Single(offset) = Local.offset_from_local_datetime(&v) {
+                return Some(v.sub(offset).timestamp());
+            } else {
+                return Some(v.timestamp());
+            }
+        } else {
+            error!("fail parse [{}] to datetime", value);
+        }
+    }
+    return None;
 }

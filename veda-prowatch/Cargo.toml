@@ -13,8 +13,9 @@ voca_rs = "1.8.0"
 uuid = { version = "0.8", features = ["serde", "v4"] }
 base64 = "0.13.0"
 url = "2.2.0"
+jsonpath = "0.1.1"
 
 v_queue = "0.1"
-v_module = { package = "v-common-module", version = "0.1.23" }
+v_module = { package = "v-common-module", version = "0.1.24" }
 
 prowatch_client = { path = "../prowatch-client" }

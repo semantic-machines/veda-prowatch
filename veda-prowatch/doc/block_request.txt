@@ -1,0 +1,228 @@
+БЛОКИРОВКА/РАЗБЛОКИРОВКА ДЕРЖАТЕЛЕЙ
+
+1. Запрос данных по ФИО + дата рождения + ИНН компании
+[S] - объект mnd-s:SourceDataRequestForPassByNames
+
+При сохранении объекта mnd-s:SourceDataRequestForPassByNames выполняем запрос данных из PW. 
+Объект уже используется для получения данных, немного изменим варианты запросов и последующую обработку результатов.
+
+- если запрос на блокировку транспорта (ищем по номер тс+инн) v-s:tag = "AutoWithCompany"
+
+car_number = [S]["mnd-s:passVehicleRegistrationNumber"]
+
+get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_FNAME/%25{car_number}%25
+
+пример ответа такой же, :
+[
+    {
+        "BadgeID": "0x002943313746444333462D394438392D3435",
+        "LastName": "Лапшин",
+        "FirstName": "Александр",
+        "MiddleName": "Васильевич",
+        "IssueDate": "2017-06-28T00:00:00",
+        "CustomBadgeFields": [
+            {
+                "ColumnName": "BADGE_SAFETY_INST_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_BIRTHDATE",
+                "DateValue": "1990-01-07T00:00:00"
+            },
+            {
+                "ColumnName": "BADGE_TITLE",
+                "FieldType": 2,
+                "TextValue": "специалист"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_SOURCE",
+                "FieldType": 2,
+                "TextValue": "Ратнев"
+            },
+            {
+                "ColumnName": "BADGE_STATE_NAME",
+                "FieldType": 2,
+                "TextValue": "временно"
+            }
+        ]
+    }
+]
+В полученном перечне объектов ищем те в которых значение CustomBadgeFields/BADGE_COMPANY_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
+Если ничего не вернулось, то [S].["v-s:errorMessage"] = "Держатель не найден"
+
+Для каждого найденного держателя создать индивид класса mnd-s:ACSRecord и в него вписать:
+v-s:backwardProperty - mnd-s:hasACSRecord
+v-s:backwardTarget - [S]
+v-s:canRead - true
+v-s:description - LastName + FirstName + MiddleName через " "
+rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE через " "
+v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
+mnd-s:winpakCardRecordId - BadgeID
+
+
+- если запрос на блокировку транспорта (ищем по ФИО+дата+компания) v-s:tag = "HumanWithCompany"
+lastname = [S]["v-s:lastName"]
+firstname = [S]["v-s:firstName"]
+middlename = [S]["v-s:middleName"]
+
+get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/{lastname}?$filter=FirstName eq {firstname} and MiddleName eq {middlename}
+
+Ответ будет выглядеть также как в auto.
+Если ничего не вернулось, то [S].["v-s:errorMessage"] = "Держатель не найден"
+
+В полученном перечне объектов ищем те в которых значения
+    CustomBadgeFields/BADGE_COMPANY_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
+    CustomBadgeFields/BADGE_BIRTHDATE = [S].["v-s:birthday"] (совпадает год рождения)
+
+Для каждого полученного держателя создать индивид класса mnd-s:ACSRecord (он же [R]) и в него вписать (то же что и для auto):
+v-s:backwardProperty - mnd-s:hasACSRecord
+v-s:backwardTarget - [S]
+v-s:canRead - true
+v-s:description - LastName + FirstName + MiddleName через " "
+rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE
+mnd-s:winpakCardRecordId - BadgeID
+
+
+- внести изменения в текущую обработку объекта
+
+условие для выполнения поиска сотрудников по ФИО (mnd-s:hasPassKind = d:ece7e741557e406bb996809163810c6e || d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea || d:ih7mpbsuu6xxmy7ouqlyhfqyua) заменить на v-s:tag = "Human"
+
+условие для выполнения поиска транспорта (mnd-s:hasPassKind = d:c94b6f98986d493cae4a3a37249101dc || d:5f5be080f1004af69742bc574c030609 || d:1799f1e110054b5a9ef819754b0932ce) заменить на v-s:tag = "Auto"
+
+
+2. БЛОКИРОВКА карт
+
+При создании объектов v-s:ExternalModuleHandler, если v-s:moduleLabel = "prowatch lock", то выполняем отключение всех карт держателя
+
+[E] - объект v-s:ExternalModuleHandler
+[R] - объект mnd-s:ACSRecord = [E]["v-s:backwardTarget"]
+[P] - объект запрос на блокировку mnd-s:PassBlockingRequest [E]["v-s:backwardTarget"]["v-s:backwardTarget"]["v-s:backwardTarget"]
+
+- запрашиваем все карты держателя указанного в [R]
+
+BadgeID = [R]["mnd-s:winpakCardRecordId"]
+
+get https://syk-vs155.mp.local:8734/pwapi/badges/{BadgeID}}/cards
+
+пример ответа (может вернуть больше одного объекта):
+[
+    {
+        "BadgeID": "0x002938383843314139372D323544342D3435",
+        "CardNumber": "49938",
+        "CardStatus": 0,
+        "IssueDate": "2021-03-03T15:16:10.1",
+        "ExpireDate": "2021-03-31T00:00:00",
+        "Company": {
+            "CompanyID": "0x004842343236434238382D443536302D3433",
+            "Description": "Пустой шаблон"
+        },
+        "CardType": {
+            "BadgeTypeID": "0x002D37413944314631362D324530302D3445",
+            "Description": "Сторонние орг - Для сторонних организаци"
+        },
+        "TraceCard": false,
+        "PINExempt": false,
+        "GuardTour": false,
+        "ADA": false,
+        "VIP": false,
+        "UserLevel": 0,
+        "AutoDisableDays": 0,
+        "UseCount": false,
+        "NumberOfAttempts": 0,
+        "CardNotes": "",
+        "LastAccess": {
+            "AccessDate": "2021-03-09T08:06:26.41",
+            "LogDevID": "0x006F336100F73D0A4EC5A7FC3A8921714B7D",
+            "LogDevDesc": "ЦП - Калитка - Вход"
+        },
+        "RowVersion": "0x000000000039D9CE",
+        "CreateDate": "2021-03-03T15:16:10.1",
+        "Msg": "",
+        "BioSelectedCard": false
+    }
+]
+вытаскиваем все значения CardNumber для обработки
+
+- для каждой полученной карты выполняем запрос на выключение
+
+cardnumber = номера карт полученные на предыдущем этапе
+put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+{
+    "CardNumber": "cardnumber",
+    "CardStatus": 1,
+}
+
+Если ошибка на любом из этапов, то вписываем стандартный статус "отклонено" и текст ошибки.
+Если все выполнено успешно, то вписываем статус "принято" и дополняем v-s:backwardTarget = индивид запроса на блокировку [P] (не заменить, а добавить к существующему)
+
+3. РАЗБЛОКИРОВКА КАРТ
+При создании объектов v-s:ExternalModuleHandler, если v-s:moduleLabel = "prowatch unlock", то выполняем включение действующих карт держателя
+
+[E] - объект v-s:ExternalModuleHandler
+[R] - объект mnd-s:ACSRecord = [E]["v-s:backwardTarget"]
+[P] - объект запрос на блокировку mnd-s:PassBlockingRequest [E]["v-s:backwardTarget"]["v-s:backwardTarget"]["v-s:backwardTarget"]
+
+- запрашиваем все карты держателя указанного в [R]
+
+BadgeID = [R]["mnd-s:winpakCardRecordId"]
+
+get https://syk-vs155.mp.local:8734/pwapi/badges/{BadgeID}}/cards
+
+пример ответа (может вернуть больше одного объекта):
+[
+    {
+        "BadgeID": "0x002938383843314139372D323544342D3435",
+        "CardNumber": "49938",
+        "CardStatus": 0,
+        "IssueDate": "2021-03-03T15:16:10.1",
+        "ExpireDate": "2021-03-31T00:00:00",
+        "Company": {
+            "CompanyID": "0x004842343236434238382D443536302D3433",
+            "Description": "Пустой шаблон"
+        },
+        "CardType": {
+            "BadgeTypeID": "0x002D37413944314631362D324530302D3445",
+            "Description": "Сторонние орг - Для сторонних организаци"
+        },
+        "TraceCard": false,
+        "PINExempt": false,
+        "GuardTour": false,
+        "ADA": false,
+        "VIP": false,
+        "UserLevel": 0,
+        "AutoDisableDays": 0,
+        "UseCount": false,
+        "NumberOfAttempts": 0,
+        "CardNotes": "",
+        "LastAccess": {
+            "AccessDate": "2021-03-09T08:06:26.41",
+            "LogDevID": "0x006F336100F73D0A4EC5A7FC3A8921714B7D",
+            "LogDevDesc": "ЦП - Калитка - Вход"
+        },
+        "RowVersion": "0x000000000039D9CE",
+        "CreateDate": "2021-03-03T15:16:10.1",
+        "Msg": "",
+        "BioSelectedCard": false
+    }
+]
+вытаскиваем все значения CardNumber для обработки, где ExpireDate больше текущей даты
+
+- для каждой действующей карты выполняем запрос на включение
+
+cardnumber = номера карт полученные на предыдущем этапе
+put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+
+{
+    "CardNumber": "cardnumber",
+    "CardStatus": 0,
+}
+
+Если ошибка на любом из этапов, то вписываем стандартный статус "отклонено" и текст ошибки.
+Если все выполнено успешно, то вписываем статус "принято" и дополняем v-s:backwardTarget = индивид запроса на блокировку [P] (не заменить, а добавить к существующему)
