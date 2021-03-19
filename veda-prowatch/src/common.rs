@@ -242,6 +242,22 @@ pub fn get_pass_type(indv_p: &mut Individual) -> PassType {
         if tag == "Human" {
             return PassType::Human;
         }
+    } else {
+        if let Some(has_kind_for_pass) = indv_p.get_first_literal("mnd-s:hasPassKind") {
+            if has_kind_for_pass == "d:c94b6f98986d493cae4a3a37249101dc"
+                || has_kind_for_pass == "d:5f5be080f1004af69742bc574c030609"
+                || has_kind_for_pass == "d:1799f1e110054b5a9ef819754b0932ce"
+            {
+                return PassType::Vehicle;
+            }
+            if has_kind_for_pass == "d:ece7e741557e406bb996809163810c6e"
+                || has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd"
+                || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6"
+                || has_kind_for_pass == "d:ih7mpbsuu6xxmy7ouqlyhfqyua"
+            {
+                return PassType::Human;
+            }
+        }
     }
     PassType::Unknown
 }
