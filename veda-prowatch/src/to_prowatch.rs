@@ -34,6 +34,19 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
                         }
                     }
 
+                    let mut upd_indv = Individual::default();
+                    upd_indv.set_id(&indv_p_id);
+                    if need_lock {
+                        upd_indv.set_uri("v-s:hasStatus", "v-s:StatusLocked");
+                    } else {
+                        upd_indv.set_uri("v-s:hasStatus", "v-s:StatusUnlocked");
+                    }
+
+                    if module.api.update(&ctx.sys_ticket, IndvOp::SetIn, &mut upd_indv).result == ResultCode::Ok {
+                        info!("success update, uri={}", upd_indv.get_id());
+                    } else {
+                        return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", upd_indv.get_id())));
+                    }
                     indv_e.add_uri("v-s:backwardTarget", &indv_p_id);
                 } else {
                     return Err((ResultCode::Ok, format!("lock_card: not found mnd-s:winpakCardRecordId in {}", indv_r.get_id())));

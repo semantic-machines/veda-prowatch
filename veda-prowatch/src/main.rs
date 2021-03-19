@@ -146,22 +146,24 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
         } else if itype == "mnd-s:SourceDataRequestForPassByNames" {
             // ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД ?
             if let Some(tag) = new_state_indv.get_first_literal("v-s:tag") {
-                let upd_res = if tag == "AutoWithCompany" {
-                    lock_holder(module, ctx, PassType::Vehicle, &mut new_state_indv)
-                } else if tag == "HumanWithCompany" {
-                    lock_holder(module, ctx, PassType::Human, &mut new_state_indv)
+                if tag == "Auto" || tag == "Human" {
+                    let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
+                    if res == ResultCode::ConnectError {
+                        return Err(res);
+                    }
                 } else {
-                    Err((ResultCode::Ok, "unknown v-s:tag".to_owned()))
-                };
+                    let upd_res = if tag == "AutoWithCompany" {
+                        lock_holder(module, ctx, PassType::Vehicle, &mut new_state_indv)
+                    } else if tag == "HumanWithCompany" {
+                        lock_holder(module, ctx, PassType::Human, &mut new_state_indv)
+                    } else {
+                        Err((ResultCode::Ok, "unknown v-s:tag".to_owned()))
+                    };
 
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
-                if res == ResultCode::ConnectError {
-                    return Err(res);
-                }
-            } else {
-                let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
-                if res == ResultCode::ConnectError {
-                    return Err(res);
+                    let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                    if res == ResultCode::ConnectError {
+                        return Err(res);
+                    }
                 }
             }
         } else if itype == "v-s:ExternalModuleHandler" {
@@ -169,7 +171,7 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
 
             if module_label == "winpak pe44 create" {
                 let upd_res = insert_to_prowatch(module, ctx, &mut new_state_indv);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
@@ -178,7 +180,7 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
             if module_label == "winpak pe44 update" {
                 // ДОБАВЛЕНИЕ НОВОЙ КАРТЫ ДЕРЖАТЕЛЮ
                 let upd_res = update_prowatch_data(module, ctx, &mut new_state_indv);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
@@ -192,14 +194,14 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
             }
             if module_label == "prowatch lock" {
                 let upd_res = lock_unlock_card(module, ctx, &mut new_state_indv, true);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
             }
             if module_label == "prowatch unlock" {
                 let upd_res = lock_unlock_card(module, ctx, &mut new_state_indv, false);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res);
+                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }

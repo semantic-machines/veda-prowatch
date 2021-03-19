@@ -519,19 +519,26 @@ pub fn set_card_status(ctx: &mut Context, card_number: &str, card_status: i32) -
     Ok(())
 }
 
-pub fn set_update_status(module: &mut Module, ctx: &mut Context, indv: &mut Individual, res: Result<(), (ResultCode, String)>) -> ResultCode {
+pub fn set_update_status(
+    module: &mut Module,
+    ctx: &mut Context,
+    indv: &mut Individual,
+    res: Result<(), (ResultCode, String)>,
+    status_if_err: &str,
+    status_if_ok: &str,
+) -> ResultCode {
     indv.parse_all();
     if let Err((sync_res, info)) = res {
         if sync_res == ResultCode::ConnectError {
             return sync_res;
         }
-        indv.set_uri("v-s:hasStatus", "v-s:StatusRejected");
+        indv.set_uri("v-s:hasStatus", status_if_err);
         set_err(module, &ctx.sys_ticket, indv, &info);
         return sync_res;
     }
 
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
-    indv.set_uri("v-s:hasStatus", "v-s:StatusAccepted");
+    indv.set_uri("v-s:hasStatus", status_if_ok);
     indv.clear("v-s:errorMessage");
 
     let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, indv);
