@@ -657,29 +657,37 @@ pub(crate) fn veda_photo_to_pw(module: &mut Module, ctx: &mut Context, badge_id:
 
 pub(crate) fn pw_photo_to_veda(module: &mut Module, ctx: &mut Context, badge_id: &str, dest: &mut Individual) {
     if let Ok(msg_base64) = ctx.pw_api_client.badging_api().badges_badge_id_photo(&badge_id) {
-        if let Ok(photo_data) = decode(msg_base64) {
-            let file_path = format!("badge_photo_{}_{}", badge_id, i64_to_str_date(Some(get_now_00_00_00().timestamp()), "%Y/%m/%d"));
-            let dest_full_path = format!("{}/{}", "data/files", file_path);
+        if let Ok(photo_data) = decode(&msg_base64.as_bytes()[1..msg_base64.len() - 1]) {
+            let files_dir_path = "data/files";
+            let file_path = format!("/{}", i64_to_str_date(Some(get_now_00_00_00().timestamp()), "%Y/%m/%d"));
+
+            fs::create_dir_all(format!("{}/{}", files_dir_path, file_path)).unwrap_or_default();
+
+            let file_uri = format!("badge_photo_{}", badge_id);
+            let full_file_path = format!("{}/{}/{}", files_dir_path, file_path, file_uri);
+
+            let file_name = format!("фото_{}.jpg", badge_id);
 
             let mut indv_file = Individual::default();
             indv_file.set_id(&(dest.get_id().to_owned() + "_photo"));
 
-            match File::create(dest_full_path.clone()) {
+            match File::create(&full_file_path) {
                 Ok(mut ofile) => {
                     if let Err(e) = ofile.write_all(&photo_data) {
-                        error!("fail write file: {:?}", e);
+                        error!("fail write file {}, {:?}", e, full_file_path);
                     } else {
-                        info!("success create file {}", dest_full_path);
+                        info!("success create file {}", full_file_path);
                     }
                 }
                 Err(e) => {
-                    error!("fail create file: {:?}", e);
+                    error!("fail create file {}, {:?}", full_file_path, e);
                 }
             }
 
             indv_file.set_uri("rdf:type", "v-s:File");
+            indv_file.set_uri("v-s:fileUri", &file_uri);
             indv_file.set_uri("v-s:filePath", &file_path);
-            indv_file.set_uri("v-s:fileName", badge_id);
+            indv_file.set_uri("v-s:fileName", &file_name);
             indv_file.set_integer("v-s:fileSize", photo_data.len() as i64);
             indv_file.set_uri("v-s:parent", dest.get_id());
 
@@ -754,7 +762,7 @@ pub fn temp_add_level_access(
         }
 
         // - добавление в виде временных
-        let sj1 = access_levels_to_json_for_add(tmp_lvl, true, set_23_59_59(indv_p.get_first_datetime("v-s:dateToPlan")), str_date_to_i64("2099-01-01T00:00:00"));
+        let sj1 = access_levels_to_json_for_add(tmp_lvl, true, set_23_59_59(indv_p.get_first_datetime("v-s:dateToPlan")), str_date_to_i64("2099-01-01T03:00:00"));
         if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj1)) {
             error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
             return Err((ResultCode::FailStore, format!("{:?}", e)));

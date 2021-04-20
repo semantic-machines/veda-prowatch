@@ -46,7 +46,9 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
                             upd_indv.set_uri("v-s:hasStatus", "v-s:StatusUnlocked");
                         }
                     } else {
-                        upd_indv.set_uri("v-s:hasStatus", "mnd-s:StatusProcessedWithoutCard");
+                        if !need_lock {
+                            upd_indv.set_uri("v-s:hasStatus", "mnd-s:StatusProcessedWithoutCard");
+                        }
                     }
 
                     if module.api.update(&ctx.sys_ticket, IndvOp::SetIn, &mut upd_indv).result == ResultCode::Ok {
@@ -240,61 +242,21 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
     add_card_with_access_to_pw(module, ctx, &badge_id, indv_p)
 }
 
-pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut Individual) -> Result<(), (ResultCode, String)> {
-    let mut indv_p = get_individual_from_predicate(module, indv, "v-s:backwardTarget")?;
-    let p_type = indv_p.get_first_literal("rdf:type").unwrap_or_default();
+pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
+    let mut indv_r = get_individual_from_predicate(module, indv_e, "v-s:backwardTarget")?;
+    let r_type = indv_r.get_first_literal("rdf:type").unwrap_or_default();
 
-    if p_type == "mnd-s:ACSRecord" {
-        let mut indv_r = indv_p;
-
-        if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
-            let mut indv_s = get_individual_from_predicate(module, &mut indv_r, "v-s:backwardTarget")?;
-            let mut indv_p = get_individual_from_predicate(module, &mut indv_s, "v-s:backwardTarget")?;
-            if let Err(e) = add_card_with_access_to_pw(module, ctx, &badge_id, &mut indv_p) {
-                error!("update_prowatch_data::add_card_with_access_to_pw, error={:?}", e);
-            }
-
-            let mut cbf = vec![];
-            equipment_to_field_list(&mut cbf, &mut indv_p);
-
-            let js = if !indv_r.get_first_literal("mnd-s:cardNumber").unwrap_or_default().is_empty() {
-                json!({ "BadgeID": badge_id, "CustomBadgeFields": cbf })
-            } else {
-                let date_to = indv_p.get_first_datetime("v-s:dateToFact");
-                json!({ "BadgeID": badge_id, "ExpireDate": i64_to_str_date_ymdthms (date_to), "CustomBadgeFields": cbf })
-            };
-
-            let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
-            if !kpp_numbers.is_empty() {
-                add_txt_to_fields(&mut cbf, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
-            }
-
-            if let Err(e) = ctx.pw_api_client.badging_api().badges_put(js) {
-                error!("badges_put: err={:?}", e);
-                return Err((ResultCode::FailStore, format!("{:?}", e)));
-            }
-
-            //  отключаем все действующие карты держателя, если пропуск временный
-            if let Some(has_kind_for_pass) = indv_p.get_first_literal("mnd-s:hasPassKind") {
-                if has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd" || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6" {
-                    if let Some(v) = indv_r.get_literals("mnd-s:cardNumber") {
-                        for card_number in v {
-                            set_card_status(ctx, &card_number, 1)?;
-                        }
-                    }
-                }
-            }
-            indv.add_uri("v-s:backwardTarget", indv_p.get_id());
-        }
+    if r_type == "mnd-s:ACSRecord" {
+        update_asc_record(module, ctx, &mut indv_r, indv_e)?;
     } else {
-        let has_change_kind_for_pass = indv_p.get_literals("mnd-s:hasChangeKindForPass");
-        if p_type != "mnd-s:Pass" && p_type != "mnd-s:PassChangeRequest" && has_change_kind_for_pass.is_none() {
-            error!("not found [mnd-s:hasChangeKindForPass] in {}, type={}", indv_p.get_id(), p_type);
+        let has_change_kind_for_pass = indv_r.get_literals("mnd-s:hasChangeKindForPass");
+        if r_type != "mnd-s:Pass" && r_type != "mnd-s:PassChangeRequest" && has_change_kind_for_pass.is_none() {
+            error!("not found [mnd-s:hasChangeKindForPass] in {}, type={}", indv_r.get_id(), r_type);
             return Err((ResultCode::NotFound, "исходные данные некорректны".to_owned()));
         }
         let has_change_kind_for_passes = has_change_kind_for_pass.unwrap_or_default();
 
-        let mut data_request_pass = get_individual_from_predicate(module, &mut indv_p, "mnd-s:hasSourceDataRequestForPass")?;
+        let mut data_request_pass = get_individual_from_predicate(module, &mut indv_r, "mnd-s:hasSourceDataRequestForPass")?;
         let wcard_number = data_request_pass.get_first_literal("mnd-s:cardNumber");
         if wcard_number.is_none() {
             error!("not found [mnd-s:cardNumber] in {}", data_request_pass.get_id());
@@ -320,7 +282,7 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
         let mut cardholder_family: Option<String> = None;
         let mut ts_number: Option<String> = None;
 
-        if p_type == "mnd-s:Pass" {
+        if r_type == "mnd-s:Pass" {
             is_update_equipment = true;
             is_update_access_levels = true;
         } else {
@@ -338,10 +300,10 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 } else if has_change_kind_for_pass == "d:e8j2tpz9r613hxq4g4rbbxtfqe" {
                     is_need_block_card = true;
                 } else if has_change_kind_for_pass == "d:a8kf3r1ryfotqg695yckpm2isih" {
-                    cardholder_family = indv_p.get_first_literal_with_lang("mnd-s:passLastName", &[Lang::RU, Lang::NONE]);
+                    cardholder_family = indv_r.get_first_literal_with_lang("mnd-s:passLastName", &[Lang::RU, Lang::NONE]);
                     is_update_family = true;
                 } else if has_change_kind_for_pass == "d:a5y91zferr8t41abib4ecdlggn0" {
-                    ts_number = indv_p.get_first_literal("mnd-s:passVehicleRegistrationNumber");
+                    ts_number = indv_r.get_first_literal("mnd-s:passVehicleRegistrationNumber");
                     is_update_ts_number = true;
                 } else if has_change_kind_for_pass == "d:efbibmgvxpr46t1qksmtkkautw" {
                     is_update_access_levels = true;
@@ -402,7 +364,7 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
 
         if is_update_equipment {
             let mut sj = vec![];
-            equipment_to_field_list(&mut sj, &mut indv_p);
+            equipment_to_field_list(&mut sj, &mut indv_r);
             if let Err(e) = ctx.pw_api_client.badging_api().badges_put(json!({ "BadgeID": badge_id, "CustomBadgeFields": sj })) {
                 error!("to PW: badges_put: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
@@ -424,12 +386,12 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             let mut access_levels = HashSet::new();
 
             if is_tmp_update_access_levels {
-                temp_add_level_access(module, ctx, &mut indv_p, &mut access_levels, &card_number)?;
+                temp_add_level_access(module, ctx, &mut indv_r, &mut access_levels, &card_number)?;
             } else {
-                set_hashset_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
+                set_hashset_from_field_field(module, &mut indv_r, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             }
 
-            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_23_59_59(indv_p.get_first_datetime("v-s:dateToPlan")));
+            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_23_59_59(indv_r.get_first_datetime("v-s:dateToPlan")));
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj)) {
                 error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
@@ -438,23 +400,21 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             }
 
             let mut custom_fields = vec![];
-            let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+            let kpp_numbers = set_str_from_field_field(module, &mut indv_r, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
             if !kpp_numbers.is_empty() {
                 add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
             }
 
-            if let Some(cp_id) = indv_p.get_first_literal("v-s:correspondentPerson") {
+            if let Some(cp_id) = indv_r.get_first_literal("v-s:correspondentPerson") {
                 let mut icp = Individual::default();
                 if module.get_individual(&cp_id, &mut icp).is_some() {
-                    if let Some(_employee) = module.get_individual(&mut icp.get_first_literal("v-s:employee").unwrap_or_default(), &mut Individual::default()) {
-                        add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(module, &mut icp, "v-s:occupation", "rdfs:label"));
-                    }
+                    add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(module, &mut icp, "v-s:occupation", "rdfs:label"));
                 } else {
                     error!("add human, invalid link v-s:correspondentPerson = {}", cp_id);
                     return Err((ResultCode::BadRequest, format!("add human, invalid link v-s:correspondentPerson = {}", cp_id)));
                 }
             } else {
-                add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", indv_p.get_first_literal("mnd-s:passPosition"));
+                add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", indv_r.get_first_literal("mnd-s:passPosition"));
             }
 
             let reqj = json!({
@@ -474,7 +434,7 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             let date_to = if is_need_block_card {
                 Some(get_now_00_00_00().timestamp())
             } else {
-                indv_p.get_first_datetime("v-s:dateToFact")
+                indv_r.get_first_datetime("v-s:dateToFact")
             };
 
             let status = if is_need_block_card {
@@ -566,5 +526,61 @@ fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: 
             info!("success add_card_with_access_to_pw, put CustomBadgeFields, badge_id={}", badge_id);
         }
     */
+    Ok(())
+}
+
+fn update_asc_record(module: &mut Module, ctx: &mut Context, indv_r: &mut Individual, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
+    if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
+        let mut indv_s = get_individual_from_predicate(module, indv_r, "v-s:backwardTarget")?;
+        let mut indv_p = get_individual_from_predicate(module, &mut indv_s, "v-s:backwardTarget")?;
+        if let Err(e) = add_card_with_access_to_pw(module, ctx, &badge_id, &mut indv_p) {
+            error!("update_prowatch_data::add_card_with_access_to_pw, error={:?}", e);
+        }
+
+        let mut custom_fields = vec![];
+        equipment_to_field_list(&mut custom_fields, &mut indv_p);
+
+        let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+        if !kpp_numbers.is_empty() {
+            add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
+        }
+
+        if let Some(cp_id) = indv_p.get_first_literal("v-s:correspondentPerson") {
+            let mut icp = Individual::default();
+            if module.get_individual(&cp_id, &mut icp).is_some() {
+                add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(module, &mut icp, "v-s:occupation", "rdfs:label"));
+            } else {
+                error!("add human, invalid link v-s:correspondentPerson = {}", cp_id);
+                return Err((ResultCode::BadRequest, format!("add human, invalid link v-s:correspondentPerson = {}", cp_id)));
+            }
+        } else {
+            add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", indv_p.get_first_literal("mnd-s:passPosition"));
+        }
+
+        let js = if !indv_r.get_first_literal("mnd-s:cardNumber").unwrap_or_default().is_empty() {
+            json!({ "BadgeID": badge_id, "CustomBadgeFields": custom_fields })
+        } else {
+            let date_to = indv_p.get_first_datetime("v-s:dateToFact");
+            json!({ "BadgeID": badge_id, "ExpireDate": i64_to_str_date_ymdthms (date_to), "CustomBadgeFields": custom_fields })
+        };
+
+        if let Err(e) = ctx.pw_api_client.badging_api().badges_put(js) {
+            error!("badges_put: err={:?}", e);
+            return Err((ResultCode::FailStore, format!("{:?}", e)));
+        }
+
+        //  отключаем все действующие карты держателя, если пропуск временный
+        if let Some(has_kind_for_pass) = indv_p.get_first_literal("mnd-s:hasPassKind") {
+            if has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd" || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6" {
+                if let Some(v) = indv_r.get_literals("mnd-s:cardNumber") {
+                    for card_number in v {
+                        set_card_status(ctx, &card_number, 1)?;
+                    }
+                }
+            }
+        }
+        indv_e.add_uri("v-s:backwardTarget", indv_p.get_id());
+    }
+
     Ok(())
 }

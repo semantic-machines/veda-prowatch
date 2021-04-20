@@ -45,7 +45,7 @@ pub trait BadgingApi {
     fn badges_badge_id_certifications_row_id(&self) -> Result<(), Error>;
     fn badges_badge_id_partitions(&self, body: &str) -> Result<(), Error>;
     fn badges_badge_id_partitions_partition_id(&self) -> Result<(), Error>;
-    fn badges_badge_id_photo(&self, badge_id: &str) -> Result<Vec<u8>, Error>;
+    fn badges_badge_id_photo(&self, badge_id: &str) -> Result<String, Error>;
     fn badges_badge_id_photo_post(&self, badge_id: &str, body: String) -> Result<(), Error>;
     fn badges_badge_id_provcards(&self) -> Result<Vec<crate::models::Array>, Error>;
     fn badges_blobs_paging_pagesize_page(&self) -> Result<Vec<crate::models::Array>, Error>;
@@ -402,7 +402,7 @@ impl BadgingApi for BadgingApiClient {
         Ok(())
     }
 
-    fn badges_badge_id_photo(&self, badge_id: &str) -> Result<Vec<u8>, Error> {
+    fn badges_badge_id_photo(&self, badge_id: &str) -> Result<String, Error> {
         let configuration: &configuration::Configuration = self.configuration.borrow();
         let client = &configuration.client;
 
@@ -418,8 +418,7 @@ impl BadgingApi for BadgingApiClient {
 
         // send request
         let req = req_builder.build()?;
-
-        Ok(client.execute(req)?.error_for_status()?.json()?)
+        Ok(client.execute(req)?.error_for_status()?.text()?)
     }
 
     fn badges_badge_id_photo_post(&self, badge_id: &str, body: String) -> Result<(), Error> {
