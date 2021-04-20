@@ -1,3 +1,5 @@
+use base64::decode;
+use base64::encode;
 use chrono::offset::LocalResult::Single;
 use chrono::DateTime;
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
@@ -5,7 +7,10 @@ use prowatch_client::apis::client::PWAPIClient;
 use prowatch_client::apis::Error;
 use serde_json::json;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::ops::{Add, Sub};
 use uuid::Uuid;
 use v_module::module::Module;
@@ -132,18 +137,27 @@ pub fn set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err
     }
 }
 
-pub fn set_vec_from_field_field(module: &mut Module, indv: &mut Individual, predicate: &str, innner_predicate: &str, out_data: &mut Vec<String>) {
+pub fn set_hashset_from_field_field(
+    module: &mut Module,
+    indv: &mut Individual,
+    predicate: &str,
+    innner_predicate: &str,
+    out_data: &mut HashSet<String>,
+) -> Vec<Box<Individual>> {
+    let mut indvs: Vec<Box<Individual>> = vec![];
     if let Some(uris) = indv.get_literals(predicate) {
         for l in uris {
             if let Some(mut indv_c) = module.get_individual_h(&l) {
                 if let Some(al) = indv_c.get_first_literal(innner_predicate) {
-                    out_data.push(al);
+                    out_data.insert(al);
+                    indvs.push(indv_c);
                 }
             } else {
                 error!("not found {}", l);
             }
         }
     }
+    indvs
 }
 
 pub fn set_str_from_field_field(module: &mut Module, indv: &mut Individual, predicate: &str, innner_predicate: &str) -> String {
@@ -179,9 +193,9 @@ pub fn i64_to_str_date_ymdthms(date: Option<i64>) -> String {
     }
 }
 
-pub fn i64_to_str_date_mdy(date: Option<i64>) -> String {
+pub fn i64_to_str_date(date: Option<i64>, format: &str) -> String {
     if let Some(date_to) = date {
-        NaiveDateTime::from_timestamp(date_to, 0).add(Duration::hours(WINPAK_TIMEZONE)).format("%m.%d.%Y").to_string()
+        NaiveDateTime::from_timestamp(date_to, 0).add(Duration::hours(WINPAK_TIMEZONE)).format(format).to_string()
     } else {
         String::new()
     }
@@ -211,14 +225,14 @@ pub fn concat_fields(fields: &[&str], els: Option<&Map<String, Value>>, delim: &
     }
     None
 }
-
+/*
 pub fn get_int_from_value(src_value: &Value, src_field: &str) -> Option<i64> {
     if let Some(v) = src_value.get(src_field) {
         return v.as_i64();
     }
     None
 }
-
+*/
 pub fn get_str_from_value<'a>(src_value: &'a Value, src_field: &str) -> Option<&'a str> {
     if let Some(v) = src_value.get(src_field) {
         return v.as_str();
@@ -386,14 +400,20 @@ pub fn get_literal_of_link(module: &mut Module, indv: &mut Individual, link: &st
     module.get_literal_of_link(indv, link, field, &mut Individual::default())
 }
 
-pub fn access_levels_to_json_for_add(access_levels: Vec<String>, is_tmp_update_access_levels: bool, date_to: Option<i64>) -> Vec<Value> {
+pub fn access_levels_to_json_for_add(access_levels: HashSet<String>, is_tmp_update_access_levels: bool, date_from: Option<i64>, date_to: Option<i64>) -> Vec<Value> {
     let mut sj: Vec<Value> = Vec::new();
+    let df = if let Some(d) = date_from {
+        Some(d)
+    } else {
+        Some(get_now_00_00_00().timestamp())
+    };
+
     for lvl in access_levels {
         let sji = if is_tmp_update_access_levels {
             json!({
             "ClearCodeID": lvl,
             "ClearCodeType": 3,
-            "ValidFrom": i64_to_str_date_ymdthms (Some(get_now_00_00_00().timestamp())),
+            "ValidFrom": i64_to_str_date_ymdthms (df),
             "ValidTo": i64_to_str_date_ymdthms (date_to)
             })
         } else {
@@ -405,7 +425,7 @@ pub fn access_levels_to_json_for_add(access_levels: Vec<String>, is_tmp_update_a
     sj
 }
 
-pub fn access_levels_to_json_for_new(access_levels: Vec<String>) -> Vec<Value> {
+pub fn access_levels_to_json_for_new(access_levels: HashSet<String>) -> Vec<Value> {
     let mut sj: Vec<Value> = Vec::new();
     for lvl in access_levels {
         let sji = json!({
@@ -470,6 +490,24 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
     if let Some(v) = el.get("BadgeID") {
         if let Some(s) = v.as_str() {
             dest.set_string("mnd-s:winpakCardRecordId", &s, Lang::NONE);
+        }
+    }
+
+    if let Some(v) = el.get("LastName") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("v-s:lastName", &s, Lang::RU);
+        }
+    }
+
+    if let Some(v) = el.get("FirstName") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("v-s:firstName", &s, Lang::RU);
+        }
+    }
+
+    if let Some(v) = el.get("MiddleName") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("v-s:middleName", &s, Lang::RU);
         }
     }
 
@@ -596,4 +634,144 @@ pub fn str_date_to_i64(value: &str) -> Option<i64> {
         }
     }
     return None;
+}
+
+pub(crate) fn veda_photo_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) {
+    if let Ok(mut file) = get_individual_from_predicate(module, src, "v-s:hasImage") {
+        info!("extract photo {} from {}", file.get_id(), src.get_id());
+
+        let src_full_path =
+            "data/files".to_owned() + &file.get_first_literal("v-s:filePath").unwrap_or_default() + "/" + &file.get_first_literal("v-s:fileUri").unwrap_or_default();
+
+        if let Ok(f) = fs::read(src_full_path) {
+            let msg_base64 = encode(f);
+
+            if let Err(e) = ctx.pw_api_client.badging_api().badges_badge_id_photo_post(&badge_id, msg_base64) {
+                error!("to PW: update_photo: badges_put: err={:?}", e);
+            } else {
+                info!("to PW: update photo, {}", src.get_id())
+            }
+        }
+    }
+}
+
+pub(crate) fn pw_photo_to_veda(module: &mut Module, ctx: &mut Context, badge_id: &str, dest: &mut Individual) {
+    if let Ok(msg_base64) = ctx.pw_api_client.badging_api().badges_badge_id_photo(&badge_id) {
+        if let Ok(photo_data) = decode(msg_base64) {
+            let file_path = format!("badge_photo_{}_{}", badge_id, i64_to_str_date(Some(get_now_00_00_00().timestamp()), "%Y/%m/%d"));
+            let dest_full_path = format!("{}/{}", "data/files", file_path);
+
+            let mut indv_file = Individual::default();
+            indv_file.set_id(&(dest.get_id().to_owned() + "_photo"));
+
+            match File::create(dest_full_path.clone()) {
+                Ok(mut ofile) => {
+                    if let Err(e) = ofile.write_all(&photo_data) {
+                        error!("fail write file: {:?}", e);
+                    } else {
+                        info!("success create file {}", dest_full_path);
+                    }
+                }
+                Err(e) => {
+                    error!("fail create file: {:?}", e);
+                }
+            }
+
+            indv_file.set_uri("rdf:type", "v-s:File");
+            indv_file.set_uri("v-s:filePath", &file_path);
+            indv_file.set_uri("v-s:fileName", badge_id);
+            indv_file.set_integer("v-s:fileSize", photo_data.len() as i64);
+            indv_file.set_uri("v-s:parent", dest.get_id());
+
+            dest.set_uri("v-s:attachment ", indv_file.get_id());
+
+            let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, &mut indv_file);
+            if res.result != ResultCode::Ok {
+                error!("fail update, uri={}, result_code={:?}", indv_file.get_id(), res.result);
+            } else {
+                info!("success update, uri={}", indv_file.get_id());
+            }
+        } else {
+            error!("failed to decode base64, badge_id={}", badge_id)
+        }
+    }
+}
+
+pub fn get_permanent_levels(card: Value) -> Vec<String> {
+    let mut f_levels = vec![];
+    if let Some(v) = card.get("ClearanceCodes") {
+        if v.is_array() {
+            for c_el in v.as_array().unwrap_or(&vec![]) {
+                if let Some(v) = c_el.get("ClearCode") {
+                    if v.get("ClearCodeType").is_none() {
+                        if let Some(v) = v.get("ClearCodeID") {
+                            if let Some(v) = v.as_str() {
+                                f_levels.push(v.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    f_levels
+}
+
+// 5. ВРЕМЕННОЕ ДОБАВЛЕНИЕ УРОВНЕЙ ДОСТУПА
+pub fn temp_add_level_access(
+    module: &mut Module,
+    ctx: &mut Context,
+    indv_p: &mut Individual,
+    access_levels: &mut HashSet<String>,
+    card_number: &str,
+) -> Result<(), (ResultCode, String)> {
+    let mut mutually_exclusive_levels = HashSet::default();
+
+    let mut alindvs = set_hashset_from_field_field(module, indv_p, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", access_levels);
+
+    for aclv in alindvs.iter_mut() {
+        set_hashset_from_field_field(module, aclv, "mnd-s:hasMutuallyExclusiveAccessLevel", "v-s:registrationNumberAdd", &mut mutually_exclusive_levels);
+    }
+
+    let mut tmp_lvl: HashSet<String> = Default::default();
+
+    let res_card = ctx.pw_api_client.badging_api().badges_cards_card(card_number);
+    let card = res_card.unwrap();
+    if card.is_object() {
+        let permanent_levels = get_permanent_levels(card);
+        for plv in permanent_levels {
+            if mutually_exclusive_levels.contains(&plv) {
+                tmp_lvl.insert(plv);
+            }
+        }
+
+        for lvl in tmp_lvl.iter() {
+            // - удаление уровней
+            if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_clearcodes_clearcode(&card_number, lvl) {
+                error!("to PW: badges_cards_card_clearcodes_clearcode: err={:?}", e);
+                return Err((ResultCode::FailStore, format!("{:?}", e)));
+            }
+        }
+
+        // - добавление в виде временных
+        let sj1 = access_levels_to_json_for_add(tmp_lvl, true, set_23_59_59(indv_p.get_first_datetime("v-s:dateToPlan")), str_date_to_i64("2099-01-01T00:00:00"));
+        if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj1)) {
+            error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
+            return Err((ResultCode::FailStore, format!("{:?}", e)));
+        } else {
+            info!("to PW: badges_cards_card_update_access_levels, card_number={}", card_number);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn set_23_59_59(date: Option<i64>) -> Option<i64> {
+    if let Some(dd) = date {
+        let d = NaiveDateTime::from_timestamp(dd, 0);
+        let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(23, 59, 59);
+        Some(d_0.timestamp())
+    } else {
+        None
+    }
 }

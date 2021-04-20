@@ -1,8 +1,7 @@
 use crate::common::*;
-use base64::encode;
 use prowatch_client::apis::Error;
 use serde_json::json;
-use std::fs;
+use std::collections::HashSet;
 use v_module::module::Module;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
@@ -12,6 +11,7 @@ use v_module::v_onto::individual::Individual;
 pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
     let mut indv_r = get_individual_from_predicate(module, indv_e, "v-s:backwardTarget")?;
     let r_type = indv_r.get_first_literal("rdf:type").unwrap_or_default();
+    let mut count_prepared_card = 0;
 
     if r_type == "mnd-s:ACSRecord" {
         if let Ok(mut indv_x) = get_individual_from_predicate(module, &mut indv_r, "v-s:backwardTarget") {
@@ -21,11 +21,13 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
                         if let Some(card_number) = get_str_from_value(&el, "CardNumber") {
                             if need_lock {
                                 set_card_status(ctx, card_number, 1)?;
+                                count_prepared_card += 1;
                             } else {
                                 let s_expire_date = get_str_from_value(&el, "ExpireDate").unwrap_or_default();
                                 if let Some(expire_date) = str_date_to_i64(s_expire_date) {
                                     if expire_date > get_now_00_00_00().timestamp() {
                                         set_card_status(ctx, card_number, 0)?;
+                                        count_prepared_card += 1;
                                     }
                                 } else {
                                     return Err((ResultCode::Ok, format!("lock_card: fail parse expire_date={}, card_number={} ", s_expire_date, card_number)));
@@ -36,10 +38,15 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
 
                     let mut upd_indv = Individual::default();
                     upd_indv.set_id(&indv_p_id);
-                    if need_lock {
-                        upd_indv.set_uri("v-s:hasStatus", "v-s:StatusLocked");
+
+                    if count_prepared_card > 0 {
+                        if need_lock {
+                            upd_indv.set_uri("v-s:hasStatus", "v-s:StatusLocked");
+                        } else {
+                            upd_indv.set_uri("v-s:hasStatus", "v-s:StatusUnlocked");
+                        }
                     } else {
-                        upd_indv.set_uri("v-s:hasStatus", "v-s:StatusUnlocked");
+                        upd_indv.set_uri("v-s:hasStatus", "mnd-s:StatusProcessedWithoutCard");
                     }
 
                     if module.api.update(&ctx.sys_ticket, IndvOp::SetIn, &mut upd_indv).result == ResultCode::Ok {
@@ -184,12 +191,12 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
 
     equipment_to_field_list(&mut custom_fields, indv_p);
     add_txt_to_fields(&mut custom_fields, "BADGE_STATE_NAME", get_literal_of_link(module, indv_p, "mnd-s:hasPassKind", "rdfs:label"));
-    add_txt_to_fields(&mut custom_fields, "BADGE_CARD", indv_p.get_first_literal("mnd-s:cardNumber"));
+    //    add_txt_to_fields(&mut custom_fields, "BADGE_CARD", indv_p.get_first_literal("mnd-s:cardNumber"));
     add_txt_to_fields(&mut custom_fields, "BADGE_COMPANY_ID", get_literal_of_link(module, indv_p, "v-s:correspondentOrganization", "v-s:taxId"));
     add_txt_to_fields(&mut custom_fields, "BADGE_SUBDIVISION_ID", get_literal_of_link(module, indv_p, "v-s:supplier", "v-s:taxId"));
     add_txt_to_fields(&mut custom_fields, "BADGE_SUBDIVISION_NAME", get_literal_of_link(module, indv_p, "v-s:supplier", "rdfs:label"));
     add_txt_to_fields(&mut custom_fields, "BADGE_COMPANY_NAME", get_literal_of_link(module, indv_p, "v-s:correspondentOrganization", "rdfs:label"));
-    add_txt_to_fields(&mut custom_fields, "BADGE_CLEARANCE_ORDER_DATE", Some(i64_to_str_date_mdy(Some(get_now_00_00_00().timestamp()))));
+    add_txt_to_fields(&mut custom_fields, "BADGE_CLEARANCE_ORDER_DATE", Some(i64_to_str_date(Some(get_now_00_00_00().timestamp()), "%d.%m.%Y")));
     add_txt_to_fields(&mut custom_fields, "BADGE_FNAME", Some(first_name.to_owned()));
     add_txt_to_fields(&mut custom_fields, "BADGE_LNAME", Some(last_name.to_owned()));
     let kpp_numbers = set_str_from_field_field(module, indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
@@ -228,7 +235,7 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
     }
     let badge_id = new_badge_id.unwrap();
 
-    add_photo_to_pw(module, ctx, &badge_id, indv_p);
+    veda_photo_to_pw(module, ctx, &badge_id, indv_p);
 
     add_card_with_access_to_pw(module, ctx, &badge_id, indv_p)
 }
@@ -301,8 +308,6 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             return Err((ResultCode::NotFound, "исходные данные некорректны".to_owned()));
         }
         let badge_id = wbadge_id.unwrap();
-
-        let mut access_levels: Vec<String> = Vec::new();
 
         let mut is_update_access_levels = false;
         let mut is_tmp_update_access_levels = false;
@@ -416,13 +421,15 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
                 }
             }
 
+            let mut access_levels = HashSet::new();
+
             if is_tmp_update_access_levels {
-                set_vec_from_field_field(module, &mut indv_p, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
+                temp_add_level_access(module, ctx, &mut indv_p, &mut access_levels, &card_number)?;
             } else {
-                set_vec_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
+                set_hashset_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             }
 
-            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, indv_p.get_first_datetime("v-s:dateToPlan"));
+            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_23_59_59(indv_p.get_first_datetime("v-s:dateToPlan")));
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj)) {
                 error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
@@ -434,6 +441,20 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv: &mut I
             let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
             if !kpp_numbers.is_empty() {
                 add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
+            }
+
+            if let Some(cp_id) = indv_p.get_first_literal("v-s:correspondentPerson") {
+                let mut icp = Individual::default();
+                if module.get_individual(&cp_id, &mut icp).is_some() {
+                    if let Some(_employee) = module.get_individual(&mut icp.get_first_literal("v-s:employee").unwrap_or_default(), &mut Individual::default()) {
+                        add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(module, &mut icp, "v-s:occupation", "rdfs:label"));
+                    }
+                } else {
+                    error!("add human, invalid link v-s:correspondentPerson = {}", cp_id);
+                    return Err((ResultCode::BadRequest, format!("add human, invalid link v-s:correspondentPerson = {}", cp_id)));
+                }
+            } else {
+                add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", indv_p.get_first_literal("mnd-s:passPosition"));
             }
 
             let reqj = json!({
@@ -494,8 +515,8 @@ pub fn delete_from_prowatch(_module: &mut Module, _ctx: &mut Context, _indv: &mu
 }
 
 fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) -> Result<(), (ResultCode, String)> {
-    let mut access_levels = vec![];
-    set_vec_from_field_field(module, src, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
+    let mut access_levels = Default::default();
+    set_hashset_from_field_field(module, src, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
     let alj = access_levels_to_json_for_new(access_levels);
 
     let wcard_number = src.get_first_literal("mnd-s:cardNumber");
@@ -546,23 +567,4 @@ fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: 
         }
     */
     Ok(())
-}
-
-fn add_photo_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) {
-    if let Ok(mut file) = get_individual_from_predicate(module, src, "v-s:hasImage") {
-        info!("extract photo {} from {}", file.get_id(), src.get_id());
-
-        let src_full_path =
-            "data/files".to_owned() + &file.get_first_literal("v-s:filePath").unwrap_or_default() + "/" + &file.get_first_literal("v-s:fileUri").unwrap_or_default();
-
-        if let Ok(f) = fs::read(src_full_path) {
-            let msg_base64 = encode(f);
-
-            if let Err(e) = ctx.pw_api_client.badging_api().badges_badge_id_photo_post(&badge_id, msg_base64) {
-                error!("to PW: update_photo: badges_put: err={:?}", e);
-            } else {
-                info!("to PW: update photo, {}", src.get_id())
-            }
-        }
-    }
 }

@@ -6,7 +6,7 @@ use v_module::v_api::*;
 use v_module::v_onto::individual::*;
 
 use crate::common::{
-    clear_card_and_set_err, create_asc_record, get_badge_use_request_indv, get_int_from_value, get_str_from_value, set_badge_to_indv, str_value2indv, Context,
+    clear_card_and_set_err, create_asc_record, get_badge_use_request_indv, get_str_from_value, pw_photo_to_veda, set_badge_to_indv, str_value2indv, Context,
     CARD_NUMBER_FIELD_NAME,
 };
 
@@ -32,12 +32,10 @@ pub fn sync_data_from_prowatch(module: &mut Module, ctx: &mut Context, src_indv:
             if let Some(badge_id) = acs_record.get_first_literal("mnd-s:winpakCardRecordId") {
                 acs_record.clear("mnd-s:cardNumber");
                 for el1 in ctx.pw_api_client.badging_api().badges_badge_id_cards(&badge_id).unwrap_or_default() {
-                    if let Some(s) = get_int_from_value(&el1, "CardStatus") {
-                        if s == 0 {
-                            str_value2indv(&el1, "CardNumber", &mut acs_record, "mnd-s:cardNumber");
-                        }
-                    }
+                    str_value2indv(&el1, "CardNumber", &mut acs_record, "mnd-s:cardNumber");
                 }
+
+                pw_photo_to_veda(module, ctx, &badge_id, &mut acs_record);
             }
 
             asc_indvs.push(acs_record);

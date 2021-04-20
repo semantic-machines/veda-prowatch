@@ -144,7 +144,7 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
         if itype == "mnd-s:SourceDataRequestForPass" {
             let _res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
         } else if itype == "mnd-s:SourceDataRequestForPassByNames" {
-            // ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД ?
+            // ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД
             if let Some(tag) = new_state_indv.get_first_literal("v-s:tag") {
                 if tag == "Auto" || tag == "Human" {
                     let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);

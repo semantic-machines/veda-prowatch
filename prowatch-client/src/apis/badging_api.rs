@@ -45,7 +45,7 @@ pub trait BadgingApi {
     fn badges_badge_id_certifications_row_id(&self) -> Result<(), Error>;
     fn badges_badge_id_partitions(&self, body: &str) -> Result<(), Error>;
     fn badges_badge_id_partitions_partition_id(&self) -> Result<(), Error>;
-    fn badges_badge_id_photo(&self) -> Result<crate::models::AnyType, Error>;
+    fn badges_badge_id_photo(&self, badge_id: &str) -> Result<Vec<u8>, Error>;
     fn badges_badge_id_photo_post(&self, badge_id: &str, body: String) -> Result<(), Error>;
     fn badges_badge_id_provcards(&self) -> Result<Vec<crate::models::Array>, Error>;
     fn badges_blobs_paging_pagesize_page(&self) -> Result<Vec<crate::models::Array>, Error>;
@@ -57,7 +57,7 @@ pub trait BadgingApi {
     fn badges_cards_card_badge(&self) -> Result<(), Error>;
     fn badges_cards_card_update_access_levels(&self, card_id: &str, body: Value) -> Result<(), Error>;
     fn badges_cards_card_delete_access_levels(&self, id: &str) -> Result<(), Error>;
-    fn badges_cards_card_clearcodes_clearcode(&self) -> Result<(), Error>;
+    fn badges_cards_card_clearcodes_clearcode(&self, card_number: &str, reg_numer: &str) -> Result<(), Error>;
     fn badges_cards_card_logdevs_logdev(&self) -> Result<(), Error>;
     fn badges_cards_copy(&self, body: &str) -> Result<(), Error>;
     fn badges_cards_copytoprov(&self, body: &str) -> Result<(), Error>;
@@ -402,11 +402,11 @@ impl BadgingApi for BadgingApiClient {
         Ok(())
     }
 
-    fn badges_badge_id_photo(&self) -> Result<crate::models::AnyType, Error> {
+    fn badges_badge_id_photo(&self, badge_id: &str) -> Result<Vec<u8>, Error> {
         let configuration: &configuration::Configuration = self.configuration.borrow();
         let client = &configuration.client;
 
-        let uri_str = format!("{}/pwapi/badges/0x002945383246374433392D333131432D3432/photo", configuration.base_path);
+        let uri_str = format!("{}/pwapi/badges/{}/photo", configuration.base_path, badge_id);
         let mut req_builder = client.get(uri_str.as_str());
 
         if let Some(ref user_agent) = configuration.user_agent {
@@ -666,11 +666,11 @@ impl BadgingApi for BadgingApiClient {
         Ok(())
     }
 
-    fn badges_cards_card_clearcodes_clearcode(&self) -> Result<(), Error> {
+    fn badges_cards_card_clearcodes_clearcode(&self, card_number: &str, reg_numer: &str) -> Result<(), Error> {
         let configuration: &configuration::Configuration = self.configuration.borrow();
         let client = &configuration.client;
 
-        let uri_str = format!("{}/pwapi/badges/cards/12345/clearcodes/0x0047BCD52E8250BC47E7BD85D7DE4BB19EAF", configuration.base_path);
+        let uri_str = format!("{}/pwapi/badges/cards/{}/clearcodes/{}", configuration.base_path, card_number, reg_numer);
         let mut req_builder = client.delete(uri_str.as_str());
 
         if let Some(ref user_agent) = configuration.user_agent {

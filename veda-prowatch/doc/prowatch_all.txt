@@ -112,6 +112,9 @@ v-s:tabNumber - CustomBadgeFields.BADGE_ID
 mnd-s:briefingDate - CustomBadgeFields.BADGE_SAFETY_INST_DATE
 mnd-s:passEquipment - CustomBadgeFields.BADGE_TOOL01 + .... + CustomBadgeFields.BADGE_TOOL11 через разделитель '\n'
 mnd-s:winpakCardRecordId - BadgeID
+v-s:lastName - LastName
+v-s:firstName - FirstName
+v-s:middleName - MiddleName
 
 Если на любом из запросов ошибка, то очищаем все заполняемые выше поля выводим текст ошибки в v-s:errorMessage
 
@@ -226,11 +229,37 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 
 Если [C]["mnd-s:hasChangeKindForPass"] = d:efbibmgvxpr46t1qksmtkkautw , то:
 
-timed_accessLevel = [C]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
+- запрашиваем данные карты, чтобы получить уровни доступа, которые указаны сейчас в  PW
+cardNumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
+get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
+
+- выполняем проверку наличия взаимоисключающих другу друга уровней доступа и при необходимости переносим срок пересекающихся уровней
+Из ответа  необходимо вытащить перечень id постоянных уровней доступа [список уровней PW] = вытащить ClearCodeID в ClearanceCodes.ClearCode, где ClearanceCodes.ClearCode.ClearCodeType пусто
+
+Получить список id взаимоисключающих уровней доступа [список исключающих уровней] = [C]["mnd-s:hasTemporaryAccessLevel"]["mnd-s:hasMutuallyExclusiveAccessLevel"]["v-s:registrationNumberAdd"] (mnd-s:hasTemporaryAccessLevel и mnd-s:hasMutuallyExclusiveAccessLevel могуть быть множественными)
+
+Находим [пересечение] из [список уровней PW] и [список исключающих уровней]. Для каждого пересекающегося значения выполнить удаление уровня доступа и после добавление этого уровня доступа в виде временного со смещенным сроком действия. Если пересечения нет, то сразу переходим к добавлению временных уровней доступа из заявки.
+    - удаление уровней 
+    delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{значение из [пересечение]}
+    - добавление в виде временных
+    accessLevel = значения из [пересечение]
+    datefrom =  [C]["v-s:dateToPlan"] в формате  2020-12-08T23:59:59
+    post https://<hostname>:8734/pwapi/badges/cards/{cardnumber}/clearcodes
+    [
+        {
+            "ClearCodeID": "accessLevel",
+            "ClearCodeType": 3,
+            "ValidFrom": "datefrom",
+            "ValidTo": "2099-01-01T00:00:00"
+        }
+    ]
+
+- добавляем временные уровни доступа из заявки
+timed_accessLevel = [C]["mnd-s:hasTemporaryAccessLevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
 timed_datefrom =  сегодня в формате  2020-12-08T00:00:00
 timed_dateto = [C]["v-s:dateToPlan"] со временем 23:59:59 в формате 2020-12-08T23:59:59
 
-post http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}}/clearcodes
+post https://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/clearcodes
 
 [
     {
@@ -334,7 +363,8 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 
 ####Получаем данные по держателю:
 
-- если пропуск на ТС mnd-s:hasPassKind = d:c94b6f98986d493cae4a3a37249101dc || d:5f5be080f1004af69742bc574c030609 || d:1799f1e110054b5a9ef819754b0932ce то выполняем запрос и вписывем данные в этот же объект [S]
+# не акутально - если пропуск на ТС mnd-s:hasPassKind = d:c94b6f98986d493cae4a3a37249101dc || d:5f5be080f1004af69742bc574c030609 || d:1799f1e110054b5a9ef819754b0932ce то выполняем запрос и вписывем данные в этот же объект [S]
+- если пропуск на ТС v-s:tag = Auto
 
 car_number = [S]["mnd-s:passVehicleRegistrationNumber"]
 
@@ -393,7 +423,9 @@ v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
 mnd-s:winpakCardRecordId - BadgeID
 
 
-- если пропуск на человека mnd-s:hasPassKind = d:ece7e741557e406bb996809163810c6e || d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea || d:ih7mpbsuu6xxmy7ouqlyhfqyua
+
+#не актуально - если пропуск на человека mnd-s:hasPassKind = d:ece7e741557e406bb996809163810c6e || d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea || d:ih7mpbsuu6xxmy7ouqlyhfqyua
+- если пропуск на ТС v-s:tag = Human
 lastname = [S]["v-s:lastName"]
 firstname = [S]["v-s:firstName"]
 middlename = [S]["v-s:middleName"]
@@ -440,10 +472,28 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/cards
     "LastChangeDate": "2020-11-16T12:06:32.8",
   }
 ]
-Может вернуть данные по нескольким картам, из них нужно выбрать только те где CardStatus=0, может ничего не вернуть в этом случае ничего не вписываем
+#Не актуально (вписываем все значения) Может вернуть данные по нескольким картам, из них нужно выбрать только те где CardStatus=0, может ничего не вернуть в этом случае ничего не вписываем
 
 Вписать в [R]:
 mnd-s:cardNumber =  вписать все значения CardNumber полученных объектов, может быть несколько значений
+
+####Получаем фото держателя
+Для каждого найденного держателя [R] также выполняем запрос фотографии
+
+BadgeID = [R]["mnd-s:winpakCardRecordId"]
+get http://<hostname>:8734/pwapi/badges/{BadgeID}/photo
+
+Ответ в base64 выглядит так:
+"/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABQODxIPDRQSERIXFhQYHzMhHxwcHz8tLyUzSkFOTUlBSEZSXHZkUldvWEZIZoxob3p9hIWET2ORm4+AmnaBhH//2wBDARYXFx8bHzwhITx/VEhUf39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f3//wAARCAFfAPcDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/
+...................................................................................................................3H2yFtzfMlQlYPsk67myr1KZjvsz5S9MUxpBtvF8odc0ASAQ/a4T5h+aOoSsf2OQeafkk/rTxMm+0PlD7uP0qMyx+TdDyv48/rQBYZY/th/en5oqgRV8u0/en75FSeZGbqI+X/AMsqiieMx237v+MmgAIG1wJus+KSVyrnEmeSfqelIrRfIdn/AC0ZqrytkqFwMjv60CHs+DuYqxIwo/uj1pqhT9nLSn5iSQKgiBBkDKGO081ZTdstWWNRg4+tADgsYjnZXbcXwPeocN/fNW02ukSyIAGLOSKl8m39TQNH/9k="
+
+Полученное содержимое конвертируем в файл и создаем объекьт вложение (v-s:File):
+uri = uri [R] + "_photo"
+rdf:type = v-s:File
+v-s:parent = uri [R]
+v-s:fileName v-s:filePath v-s:fileSize = вычисляемые
+
+Вписываем вложение в [R]: v-s:attachment = uri файла
 
 
 #----------------------------------------------------------------
@@ -506,6 +556,8 @@ BadgeID = [R]["mnd-s:winpakCardRecordId"]
 dateTo = [P]["v-s:dateToFact"]
 tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно и вписать в BADGE_TOOL01 - BADGE_TOOL11 соответственно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
 kpp_numbers = собрать из значений через пробел в [C]["mnd-s:hasAccesslevel"]["mnd-s:accessLevelCheckpoints"] (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
+position = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:occupation"]["rdfs:label"]
+        если [P]["v-s:correspondentPerson"] пусто, то [P]["mnd-s:passPosition"] с обрезанием пробелов в начале и конце строки
 
 если [R]["mnd-s:cardNumber"] не пусто, то исключить из запроса поле "ExpireDate": "dateTo" (не изменяем срок действия человека, если есть действующая карта)
 
@@ -527,7 +579,12 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
             "ColumnName": "BADGE_CAR_ENTRY_POINT",
             "FieldType": 2,
             "TextValue": "kpp_numbers"
-        } 
+        },
+        {
+            "ColumnName": "BADGE_TITLE",
+            "FieldType": 2,
+            "TextValue": "position"
+        }
     ]
 }
 
@@ -680,11 +737,6 @@ kpp numbers = собрать из значений через пробел в [P
             "TextValue": "tool11"
         },
         {
-            "ColumnName": "BADGE_CARD",
-            "FieldType": 2,
-            "TextValue": "cardnumber"
-        },
-        {
             "ColumnName": "BADGE_SUBDIVISION_ID",
             "FieldType": 2,
             "TextValue": "subdivision_inn"
@@ -736,7 +788,7 @@ subdivisionid = [P]["v-s:supplier"]["v-s:taxId"]
 inn = [P]["v-s:correspondentOrganization"]["v-s:taxId"]
 subdivision_name = [P]["v-s:supplier"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
 company_name = [P]["v-s:correspondentOrganization"]["rdfs:label"] с обрезанием пробелов в начале и конце строки
-request_date = текущая дата без времени в формате mm.dd.yyyy
+request_date = текущая дата без времени в формате dd.mm.yyyy
 kpp numbers = собрать из значений через пробел в [P].mnd-s:hasAccessLevel.mnd-s:accessLevelCheckpoints (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
 
 {
@@ -815,11 +867,6 @@ kpp numbers = собрать из значений через пробел в [P
             "ColumnName": "BADGE_TOOL11",
             "FieldType": 2,
             "TextValue": "tool11"
-        },
-        {
-            "ColumnName": "BADGE_CARD",
-            "FieldType": 2,
-            "TextValue": "cardnumber"
         },
         {
             "ColumnName": "BADGE_SUBDIVISION_ID",
