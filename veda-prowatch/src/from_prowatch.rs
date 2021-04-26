@@ -111,7 +111,12 @@ pub fn sync_data_from_prowatch(module: &mut Module, ctx: &mut Context, src_indv:
 fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
     if let Some(d) = card.get("IssueDate") {
         indv.clear("v-s:dateFrom");
-        indv.add_datetime_from_str("v-s:dateFrom", d.as_str().unwrap_or_default());
+        let sd = d.as_str().unwrap_or_default();
+        if sd.len() > 20 {
+            indv.add_datetime_from_str("v-s:dateFrom", sd.split("T").next().unwrap_or_default());
+        } else {
+            indv.add_datetime_from_str("v-s:dateFrom", sd);
+        }
     }
 
     if let Some(d) = card.get("ExpireDate") {
