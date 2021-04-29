@@ -1,7 +1,7 @@
 use base64::decode;
 use base64::encode;
 use chrono::offset::LocalResult::Single;
-use chrono::DateTime;
+use chrono::{DateTime, Offset};
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use prowatch_client::apis::client::PWAPIClient;
 use prowatch_client::apis::Error;
@@ -28,8 +28,6 @@ pub enum PassType {
     Human,
     Unknown,
 }
-
-pub const WINPAK_TIMEZONE: i64 = 0;
 
 pub const CARD_NUMBER_FIELD_NAME: &str = "mnd-s:cardNumber";
 
@@ -187,7 +185,7 @@ pub fn get_now_00_00_00() -> NaiveDateTime {
 
 pub fn i64_to_str_date_ymdthms(date: Option<i64>) -> String {
     if let Some(date_to) = date {
-        NaiveDateTime::from_timestamp(date_to, 0).add(Duration::hours(WINPAK_TIMEZONE)).format("%Y-%m-%dT%H:%M:%S").to_string()
+        NaiveDateTime::from_timestamp(date_to, 0).format("%Y-%m-%dT%H:%M:%S").to_string()
     } else {
         String::new()
     }
@@ -195,7 +193,7 @@ pub fn i64_to_str_date_ymdthms(date: Option<i64>) -> String {
 
 pub fn i64_to_str_date(date: Option<i64>, format: &str) -> String {
     if let Some(date_to) = date {
-        NaiveDateTime::from_timestamp(date_to, 0).add(Duration::hours(WINPAK_TIMEZONE)).format(format).to_string()
+        NaiveDateTime::from_timestamp(date_to, 0).format(format).to_string()
     } else {
         String::new()
     }
@@ -604,7 +602,7 @@ pub fn set_update_status(
     ResultCode::Ok
 }
 
-pub fn str_date_to_i64(value: &str) -> Option<i64> {
+pub fn str_date_to_i64(value: &str, offset: Option<Duration>) -> Option<i64> {
     if value.contains('Z') {
         if let Ok(v) = DateTime::parse_from_rfc3339(&value) {
             return Some(v.timestamp());
@@ -624,11 +622,17 @@ pub fn str_date_to_i64(value: &str) -> Option<i64> {
         }
 
         if let Ok(v) = ndt {
-            if let Single(offset) = Local.offset_from_local_datetime(&v) {
-                return Some(v.sub(offset).timestamp());
+            let vo = if let Single(offset) = Local.offset_from_local_datetime(&v) {
+                v.sub(offset)
             } else {
-                return Some(v.timestamp());
-            }
+                v
+            };
+
+            return if let Some(o) = offset {
+                Some(vo.add(o).timestamp())
+            } else {
+                Some(vo.timestamp())
+            };
         } else {
             error!("fail parse [{}] to datetime", value);
         }
@@ -761,8 +765,15 @@ pub fn temp_add_level_access(
             }
         }
 
+        let offset = Local.timestamp(0, 0).offset().fix().local_minus_utc() as i64;
+
         // - добавление в виде временных
-        let sj1 = access_levels_to_json_for_add(tmp_lvl, true, set_23_59_59(indv_p.get_first_datetime("v-s:dateToPlan")), str_date_to_i64("2099-01-01T03:00:00"));
+        let sj1 = access_levels_to_json_for_add(
+            tmp_lvl,
+            true,
+            set_next_day_and_00_00_00(indv_p.get_first_datetime("v-s:dateToPlan")),
+            str_date_to_i64("2100-01-01T00:00:00", Some(Duration::seconds(offset))),
+        );
         if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj1)) {
             error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
             return Err((ResultCode::FailStore, format!("{:?}", e)));
@@ -773,12 +784,22 @@ pub fn temp_add_level_access(
 
     Ok(())
 }
-
+/*
 pub fn set_23_59_59(date: Option<i64>) -> Option<i64> {
     if let Some(dd) = date {
         let d = NaiveDateTime::from_timestamp(dd, 0);
         let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(23, 59, 59);
         Some(d_0.timestamp())
+    } else {
+        None
+    }
+}
+*/
+pub fn set_next_day_and_00_00_00(date: Option<i64>) -> Option<i64> {
+    if let Some(dd) = date {
+        let d = NaiveDateTime::from_timestamp(dd, 0);
+        let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(00, 00, 00);
+        Some(d_0.add(Duration::days(1)).timestamp())
     } else {
         None
     }

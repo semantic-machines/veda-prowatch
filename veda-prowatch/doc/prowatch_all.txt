@@ -193,6 +193,7 @@ kpp_numbers = собрать из значений через пробел в [C
     ]
 }
 
+
 #-------------------------------------------------------------------------------------------------
 
 4. БЛОКИРОВКА ПРОПУСКА
@@ -250,7 +251,7 @@ get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
             "ClearCodeID": "accessLevel",
             "ClearCodeType": 3,
             "ValidFrom": "datefrom",
-            "ValidTo": "2099-01-01T00:00:00"
+            "ValidTo": "2100-01-01T00:00:00"
         }
     ]
 

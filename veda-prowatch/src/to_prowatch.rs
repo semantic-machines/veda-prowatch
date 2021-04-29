@@ -24,7 +24,7 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
                                 count_prepared_card += 1;
                             } else {
                                 let s_expire_date = get_str_from_value(&el, "ExpireDate").unwrap_or_default();
-                                if let Some(expire_date) = str_date_to_i64(s_expire_date) {
+                                if let Some(expire_date) = str_date_to_i64(s_expire_date, None) {
                                     if expire_date > get_now_00_00_00().timestamp() {
                                         set_card_status(ctx, card_number, 0)?;
                                         count_prepared_card += 1;
@@ -399,7 +399,7 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv_e: &mut
                 set_hashset_from_field_field(module, &mut indv_r, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             }
 
-            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_23_59_59(indv_r.get_first_datetime("v-s:dateToPlan")));
+            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_next_day_and_00_00_00(indv_r.get_first_datetime("v-s:dateToPlan")));
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj)) {
                 error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
