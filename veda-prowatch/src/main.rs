@@ -41,6 +41,7 @@ fn listen_queue<'a>() -> Result<(), i32> {
         error!("fail get system ticket");
         return Ok(());
     }
+    info!("ticket={}", sys_ticket);
 
     let mut onto = Onto::default();
 
@@ -123,8 +124,6 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
         return Ok(());
     }
 
-    //let signal = queue_element.get_first_literal("src").unwrap_or_default();
-
     let mut new_state_indv = Individual::default();
     get_inner_binobj_as_individual(queue_element, "new_state", &mut new_state_indv);
 
@@ -134,8 +133,8 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
         return Ok(());
     }
 
-    if let Some(v) = new_state_indv.get_first_literal("v-s:lastEditor") {
-        if v == "cfg:VedaSystemAppointment" {
+    if let Some(counter) = new_state_indv.get_first_integer("v-s:updateCounter") {
+        if counter > 1 {
             return Ok(());
         }
     }

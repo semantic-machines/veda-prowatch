@@ -114,7 +114,7 @@ pub fn clear_card_and_set_err(module: &mut Module, sys_ticket: &str, indv: &mut 
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    let res = module.api.update(sys_ticket, IndvOp::Put, indv);
+    let res = module.api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv);
     if res.result != ResultCode::Ok {
         error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
     } else {
@@ -127,7 +127,7 @@ pub fn set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    let res = module.api.update(sys_ticket, IndvOp::Put, indv);
+    let res = module.api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv);
     if res.result != ResultCode::Ok {
         error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
     } else {
@@ -593,7 +593,7 @@ pub fn set_update_status(
     indv.set_uri("v-s:hasStatus", status_if_ok);
     indv.clear("v-s:errorMessage");
 
-    let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, indv);
+    let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, indv);
     if res.result != ResultCode::Ok {
         error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
     } else {

@@ -54,7 +54,7 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
                         }
 
                         if !upd_indv.is_empty() {
-                            if module.api.update(&ctx.sys_ticket, IndvOp::Put, &mut upd_indv).result == ResultCode::Ok {
+                            if module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &mut upd_indv).result == ResultCode::Ok {
                                 info!("success update, uri={}", upd_indv.get_id());
                             } else {
                                 return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", upd_indv.get_id())));
@@ -102,7 +102,7 @@ pub fn lock_holder(module: &mut Module, ctx: &mut Context, pass_type: PassType, 
             if let Some(jv) = fields.get("BADGE_BIRTHDATE") {
                 if let Some(v) = jv.as_str() {
                     if v == birthday {
-                        warn!("fields={:?}", fields);
+                        //warn!("fields={:?}", fields);
                         is_next = true;
                     }
                 }
@@ -126,7 +126,7 @@ pub fn lock_holder(module: &mut Module, ctx: &mut Context, pass_type: PassType, 
     }
 
     for el in asc_indvs.iter_mut() {
-        let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, el);
+        let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el);
         if res.result == ResultCode::Ok {
             info!("success update, uri={}", el.get_id());
         } else {
@@ -399,7 +399,8 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv_e: &mut
                 set_hashset_from_field_field(module, &mut indv_r, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             }
 
-            let sj = access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_next_day_and_00_00_00(indv_r.get_first_datetime("v-s:dateToPlan")));
+            let sj =
+                access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_next_day_and_00_00_00(indv_r.get_first_datetime("v-s:dateToPlan")));
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj)) {
                 error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));

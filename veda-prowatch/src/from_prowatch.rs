@@ -87,7 +87,7 @@ pub fn sync_data_from_prowatch(module: &mut Module, ctx: &mut Context, src_indv:
 
     src_indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, src_indv);
+    let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, src_indv);
     if res.result != ResultCode::Ok {
         error!("fail update, uri={}, result_code={:?}", src_indv.get_id(), res.result);
         return ResultCode::DatabaseModifiedError;
@@ -96,7 +96,7 @@ pub fn sync_data_from_prowatch(module: &mut Module, ctx: &mut Context, src_indv:
     }
 
     for el in asc_indvs.iter_mut() {
-        let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, el);
+        let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el);
         if res.result == ResultCode::Ok {
             info!("success update, uri={}", el.get_id());
         } else {
