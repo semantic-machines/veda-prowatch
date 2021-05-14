@@ -230,14 +230,121 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 
 Если [C]["mnd-s:hasChangeKindForPass"] = d:efbibmgvxpr46t1qksmtkkautw , то:
 
-- запрашиваем данные карты, чтобы получить уровни доступа, которые указаны сейчас в  PW
+1) получаем список id взаимоисключающих уровней доступа, запоминаем [список исключений]
+[список исключающих уровней] = [C]["mnd-s:hasTemporaryAccessLevel"]["mnd-s:hasMutuallyExclusiveAccessLevel"]["v-s:registrationNumberAdd"] (mnd-s:hasTemporaryAccessLevel и mnd-s:hasMutuallyExclusiveAccessLevel могуть быть множественными)
+
+2) запрашиваем данные карты, чтобы получить уровни доступа, которые указаны сейчас в  PW, запоминаем [уровни доступа]
 cardNumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
 get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
+пример ответа:
+{
+    "BadgeID": "0x002932333046433144382D344342362D3441",
+    "CardNumber": "5327",
+    "CardStatus": 0,
+    "IssueDate": "2021-03-09T17:09:59.82",
+    "ExpireDate": "2021-04-30T00:00:00",
+    "ClearanceCodes": [
+        {
+            "BadgeID": "0x002932333046433144382D344342362D3441",
+            "CardNumber": "5327",
+            "ClearCode": {
+                "ClearCodeID": "0x0047ED6B4683EA17486482A42FC553227869",
+                "Description": "КПП-2 (Север) Турникет",
+                "Description2": "для прохода на Промплощадку",
+                "Description3": "",
+                "ClearCodeType": 3,
+                "TimeZone": {
+                    "TimeZoneID": "0x000E42936DA70D2145C0BBB6359696C632AC",
+                    "Description": "24-х часовая зона"
+                },
+                "ValidFrom": "2021-04-29T00:00:00",
+                "ValidTo": "2021-05-01T00:00:00"
+            },
+        },
+        {
+            "BadgeID": "0x002932333046433144382D344342362D3441",
+            "CardNumber": "5327",
+            "ClearCode": {
+                "ClearCodeID": "0x004730303641394346442D443846382D3434",
+                "Description": "Промплощадка в будни-вых 7-19",
+                "Description2": "для прохода на Промплощадку",
+                "Description3": "",
+                "ClearCodeType": 3,
+                "TimeZone": {
+                    "Description": ""
+                },
+                "ValidFrom": "2021-05-01T00:00:00",
+                "ValidTo": "2100-01-01T00:00:00"
+            },
+        }
+    ],
+}
 
+3) выполняем проверку наличия взаимоисключающих другу друга уровней доступа и при необходимости переносим срок пересекающихся уровней 
+Из ответа в (2) получаем уровни доступа, объекты лежат в ClearanceCodes.ClearCode, и для каждого в [уровни доступа] выполняем проверку:
+    3.1) если ClearCodeID среди [список исключений] нет, то переходим к следующему
+    3.2) если ClearCodeID уровня есть среди "списка взамиоисключающих уровней", то проверяем вид уровня доступа
+
+        3.1.1) если уровень доступа постоянный ( ValidTo отсутствует или ValidTo='2100-01-01T00:00:00' ), то удаляем уровни и добавляем в виде временных
+            - удаление уровней 
+            delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{значение ClearCodeID}
+            - добавление в виде временных
+            accessLevel = значение ClearCodeID
+            datefrom =  [C]["v-s:dateToPlan"] + 1 день
+            post https://<hostname>:8734/pwapi/badges/cards/{cardnumber}/clearcodes
+            [
+                {
+                    "ClearCodeID": "accessLevel",
+                    "ClearCodeType": 3,
+                    "ValidFrom": "datefrom",
+                    "ValidTo": "2100-01-01T00:00:00"
+                }
+            ]
+
+        3.1.2) если уровень доступа временный ( ValidTo есть и !='2100-01-01T00:00:00' ), то проверяем сроки действия
+            - срок действия меньше ValidTo <= [C]["v-s:dateToPlan"] , то удаляем уровень
+            delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{значение ClearCodeID}
+            - срок действия больше ValidTo > [C]["v-s:dateToPlan"] , удаляем уровень и переписываем с переносом дат
+                - удаление уровней 
+                delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{значение ClearCodeID}
+                - добавление уровень
+                accessLevel = значение ClearCodeID
+                datefrom =  [C]["v-s:dateToPlan"] + 1 день
+                dateto = значение ValidTo, которые было ранее у этого уровня доступа
+                post https://<hostname>:8734/pwapi/badges/cards/{cardnumber}/clearcodes
+                [
+                    {
+                        "ClearCodeID": "accessLevel",
+                        "ClearCodeType": 3,
+                        "ValidFrom": "datefrom",
+                        "ValidTo": "dateto"
+                    }
+                ]
+
+4) предварительно удаляем и после добавляем временные уровни доступа из заявки
+cardNumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
+timed_accessLevel = [C]["mnd-s:hasTemporaryAccessLevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
+timed_datefrom =  сегодня в формате  2020-12-08T00:00:00
+timed_dateto = [C]["v-s:dateToPlan"] со временем 23:50:00 в формате 2020-12-08T23:50:00
+
+    - удаляем 
+    delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{timed_accessLevel}
+
+    - добавляем
+    post https://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/clearcodes
+
+    [
+        {
+            "ClearCodeID": "timed_accessLevel",
+            "ClearCodeType": 3,
+            "ValidFrom": "timed_datefrom",
+            "ValidTo": "timed_dateto"
+        }
+    ]
+
+############НЕ АКТУАЛЬНО##########################
 - выполняем проверку наличия взаимоисключающих другу друга уровней доступа и при необходимости переносим срок пересекающихся уровней
-Из ответа  необходимо вытащить перечень id постоянных уровней доступа [список уровней PW] = вытащить ClearCodeID в ClearanceCodes.ClearCode, где ClearanceCodes.ClearCode.ClearCodeType пусто
-
-Получить список id взаимоисключающих уровней доступа [список исключающих уровней] = [C]["mnd-s:hasTemporaryAccessLevel"]["mnd-s:hasMutuallyExclusiveAccessLevel"]["v-s:registrationNumberAdd"] (mnd-s:hasTemporaryAccessLevel и mnd-s:hasMutuallyExclusiveAccessLevel могуть быть множественными)
+Из ответа  необходимо вытащить перечень id уровней доступа [список уровней PW] = вытащить все ClearCodeID в ClearanceCodes.ClearCode
 
 Находим [пересечение] из [список уровней PW] и [список исключающих уровней]. Для каждого пересекающегося значения выполнить удаление уровня доступа и после добавление этого уровня доступа в виде временного со смещенным сроком действия. 
     - удаление уровней 
@@ -254,22 +361,7 @@ get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
             "ValidTo": "2100-01-01T00:00:00"
         }
     ]
-
-- добавляем временные уровни доступа из заявки
-timed_accessLevel = [C]["mnd-s:hasTemporaryAccessLevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
-timed_datefrom =  сегодня в формате  2020-12-08T00:00:00
-timed_dateto = [C]["v-s:dateToPlan"] со временем 23:50:00 в формате 2020-12-08T23:50:00
-
-post https://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/clearcodes
-
-[
-    {
-        "ClearCodeID": "timed_accessLevel",
-        "ClearCodeType": 3,
-        "ValidFrom": "timed_datefrom",
-        "ValidTo": "timed_dateto"
-    }
-]
+############НЕ АКТУАЛЬНО##########################
 
 #-------------------------------------------------------------------------------------------------
 
@@ -473,7 +565,6 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/cards
     "LastChangeDate": "2020-11-16T12:06:32.8",
   }
 ]
-#Не актуально (вписываем все значения) Может вернуть данные по нескольким картам, из них нужно выбрать только те где CardStatus=0, может ничего не вернуть в этом случае ничего не вписываем
 
 Вписать в [R]:
 mnd-s:cardNumber =  вписать все значения CardNumber полученных объектов, может быть несколько значений

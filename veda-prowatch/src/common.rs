@@ -30,6 +30,7 @@ pub enum PassType {
 }
 
 pub const CARD_NUMBER_FIELD_NAME: &str = "mnd-s:cardNumber";
+pub const S_MAX_TIME: &str = "2100-01-01T00:00:00";
 
 pub struct Context {
     pub sys_ticket: String,
@@ -139,14 +140,14 @@ pub fn set_hashset_from_field_field(
     module: &mut Module,
     indv: &mut Individual,
     predicate: &str,
-    innner_predicate: &str,
+    inner_predicate: &str,
     out_data: &mut HashSet<String>,
 ) -> Vec<Box<Individual>> {
     let mut indvs: Vec<Box<Individual>> = vec![];
     if let Some(uris) = indv.get_literals(predicate) {
         for l in uris {
             if let Some(mut indv_c) = module.get_individual_h(&l) {
-                if let Some(al) = indv_c.get_first_literal(innner_predicate) {
+                if let Some(al) = indv_c.get_first_literal(inner_predicate) {
                     out_data.insert(al);
                     indvs.push(indv_c);
                 }
@@ -175,28 +176,6 @@ pub fn set_str_from_field_field(module: &mut Module, indv: &mut Individual, pred
         }
     }
     out_data
-}
-
-pub fn get_now_00_00_00() -> NaiveDateTime {
-    let d = NaiveDateTime::from_timestamp(Utc::now().timestamp(), 0);
-    let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(0, 0, 0);
-    d_0
-}
-
-pub fn i64_to_str_date_ymdthms(date: Option<i64>) -> String {
-    if let Some(date_to) = date {
-        NaiveDateTime::from_timestamp(date_to, 0).format("%Y-%m-%dT%H:%M:%S").to_string()
-    } else {
-        String::new()
-    }
-}
-
-pub fn i64_to_str_date(date: Option<i64>, format: &str) -> String {
-    if let Some(date_to) = date {
-        NaiveDateTime::from_timestamp(date_to, 0).format(format).to_string()
-    } else {
-        String::new()
-    }
 }
 
 pub fn concat_fields(fields: &[&str], els: Option<&Map<String, Value>>, delim: &str) -> Option<String> {
@@ -420,6 +399,29 @@ pub fn access_levels_to_json_for_add(access_levels: HashSet<String>, is_tmp_upda
 
         sj.push(sji);
     }
+    sj
+}
+
+pub fn access_level_to_json_for_add(access_level: &str, is_tmp_update_access_levels: bool, date_from: Option<i64>, date_to: Option<i64>) -> Vec<Value> {
+    let mut sj: Vec<Value> = Vec::new();
+    let df = if let Some(d) = date_from {
+        Some(d)
+    } else {
+        Some(get_now_00_00_00().timestamp())
+    };
+
+    let sji = if is_tmp_update_access_levels {
+        json!({
+        "ClearCodeID": access_level,
+        "ClearCodeType": 3,
+        "ValidFrom": i64_to_str_date_ymdthms (df),
+        "ValidTo": i64_to_str_date_ymdthms (date_to)
+        })
+    } else {
+        json!({ "ClearCodeID": access_level })
+    };
+
+    sj.push(sji);
     sj
 }
 
@@ -695,7 +697,7 @@ pub(crate) fn pw_photo_to_veda(module: &mut Module, ctx: &mut Context, badge_id:
             indv_file.set_integer("v-s:fileSize", photo_data.len() as i64);
             indv_file.set_uri("v-s:parent", dest.get_id());
 
-            dest.set_uri("v-s:attachment ", indv_file.get_id());
+            dest.set_uri("v-s:attachment", indv_file.get_id());
 
             let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, &mut indv_file);
             if res.result != ResultCode::Ok {
@@ -709,18 +711,27 @@ pub(crate) fn pw_photo_to_veda(module: &mut Module, ctx: &mut Context, badge_id:
     }
 }
 
-pub fn get_permanent_levels(card: Value) -> Vec<String> {
+pub fn get_levels(card: Value) -> Vec<(String, String)> {
     let mut f_levels = vec![];
     if let Some(v) = card.get("ClearanceCodes") {
         if v.is_array() {
             for c_el in v.as_array().unwrap_or(&vec![]) {
+                let mut clear_code_id = "".to_string();
+                let mut valid_to = "".to_string();
                 if let Some(v) = c_el.get("ClearCode") {
-                    if v.get("ClearCodeType").is_none() {
-                        if let Some(v) = v.get("ClearCodeID") {
-                            if let Some(v) = v.as_str() {
-                                f_levels.push(v.to_owned());
-                            }
+                    if let Some(v) = v.get("ClearCodeID") {
+                        if let Some(v) = v.as_str() {
+                            clear_code_id = v.to_owned();
                         }
+                    }
+                    if let Some(v) = v.get("ValidTo") {
+                        if let Some(v) = v.as_str() {
+                            valid_to = v.to_owned();
+                        }
+                    }
+
+                    if !clear_code_id.is_empty() {
+                        f_levels.push((clear_code_id, valid_to));
                     }
                 }
             }
@@ -733,68 +744,95 @@ pub fn get_permanent_levels(card: Value) -> Vec<String> {
 pub fn temp_add_level_access(
     module: &mut Module,
     ctx: &mut Context,
-    indv_p: &mut Individual,
+    indv_c: &mut Individual,
     access_levels: &mut HashSet<String>,
     card_number: &str,
 ) -> Result<(), (ResultCode, String)> {
+    let offset = Local.timestamp(0, 0).offset().fix().local_minus_utc() as i64;
+
     let mut mutually_exclusive_levels = HashSet::default();
 
-    let mut alindvs = set_hashset_from_field_field(module, indv_p, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", access_levels);
+    // 1) получаем список id взаимоисключающих уровней доступа, запоминаем [список исключений]
+    // [список исключающих уровней] = [C]["mnd-s:hasTemporaryAccessLevel"]["mnd-s:hasMutuallyExclusiveAccessLevel"]["v-s:registrationNumberAdd"]
+    // (mnd-s:hasTemporaryAccessLevel и mnd-s:hasMutuallyExclusiveAccessLevel могуть быть множественными)
 
+    let mut alindvs = set_hashset_from_field_field(module, indv_c, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", access_levels);
     for aclv in alindvs.iter_mut() {
         set_hashset_from_field_field(module, aclv, "mnd-s:hasMutuallyExclusiveAccessLevel", "v-s:registrationNumberAdd", &mut mutually_exclusive_levels);
     }
 
-    let mut tmp_lvl: HashSet<String> = Default::default();
+    // 2) запрашиваем данные карты, чтобы получить уровни доступа, которые указаны сейчас в  PW, запоминаем [уровни доступа]
+    // cardNumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
 
     let res_card = ctx.pw_api_client.badging_api().badges_cards_card(card_number);
     let card = res_card.unwrap();
     if card.is_object() {
-        let permanent_levels = get_permanent_levels(card);
-        for plv in permanent_levels {
-            if mutually_exclusive_levels.contains(&plv) {
-                tmp_lvl.insert(plv);
+        let permanent_levels = get_levels(card);
+
+        for (clear_code_id, valid_to) in permanent_levels {
+            if mutually_exclusive_levels.contains(&clear_code_id) {
+                delete_level(ctx, card_number, &clear_code_id)?;
+
+                let is_permanent_level = valid_to.is_empty() || valid_to == S_MAX_TIME;
+
+                let d_valid_to = if valid_to.is_empty() {
+                    str_date_to_i64(S_MAX_TIME, Some(Duration::seconds(offset))).unwrap_or_default()
+                } else {
+                    str_date_to_i64(&valid_to, Some(Duration::seconds(offset))).unwrap_or_default()
+                };
+
+                let date_to_plan = indv_c.get_first_datetime("v-s:dateToPlan").unwrap_or_default();
+
+                if is_permanent_level || (!is_permanent_level && d_valid_to > date_to_plan) {
+                    // - добавление в виде временных
+                    add_level(ctx, card_number, &clear_code_id, set_next_day_and_00_00_00(indv_c.get_first_datetime("v-s:dateToPlan")), Some(d_valid_to))?;
+                }
             }
         }
+    }
 
-        for lvl in tmp_lvl.iter() {
-            // - удаление уровней
-            if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_clearcodes_clearcode(&card_number, lvl) {
-                error!("to PW: badges_cards_card_clearcodes_clearcode: err={:?}", e);
-                return Err((ResultCode::FailStore, format!("{:?}", e)));
-            }
-        }
-
-        let offset = Local.timestamp(0, 0).offset().fix().local_minus_utc() as i64;
-
-        // - добавление в виде временных
-        let sj1 = access_levels_to_json_for_add(
-            tmp_lvl,
-            true,
-            set_next_day_and_00_00_00(indv_p.get_first_datetime("v-s:dateToPlan")),
-            str_date_to_i64("2100-01-01T00:00:00", Some(Duration::seconds(offset))),
-        );
-        if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj1)) {
-            error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
-            return Err((ResultCode::FailStore, format!("{:?}", e)));
-        } else {
-            info!("to PW: badges_cards_card_update_access_levels, card_number={}", card_number);
-        }
+    //4) предварительно удаляем и после добавляем временные уровни доступа из заявки
+    for clear_code_id in access_levels.iter() {
+        delete_level(ctx, card_number, clear_code_id)?;
+        add_level(ctx, card_number, &clear_code_id, Some(get_now_00_00_00().timestamp()), set_next_day_and_00_00_00(indv_c.get_first_datetime("v-s:dateToPlan")))?;
     }
 
     Ok(())
 }
+
+fn delete_level(ctx: &mut Context, card_number: &str, clear_code_id: &str) -> Result<(), (ResultCode, String)> {
+    if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_clearcodes_clearcode(card_number, clear_code_id) {
+        error!("to PW: delete_level : err={:?}", e);
+        return Err((ResultCode::FailStore, format!("{:?}", e)));
+    }
+
+    Ok(())
+}
+
+fn add_level(ctx: &mut Context, card_number: &str, clear_code_id: &str, date_from: Option<i64>, date_to: Option<i64>) -> Result<(), (ResultCode, String)> {
+    let sj1 = access_level_to_json_for_add(clear_code_id, true, date_from, date_to);
+    if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(card_number, json!(sj1)) {
+        error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
+        return Err((ResultCode::FailStore, format!("{:?}", e)));
+    } else {
+        info!("to PW: badges_cards_card_update_access_levels, card_number={}", card_number);
+    }
+
+    Ok(())
+}
+
 /*
-pub fn set_23_59_59(date: Option<i64>) -> Option<i64> {
+pub fn set_time(date: Option<i64>, hour: u32, min: u32, sec: u32) -> Option<i64> {
     if let Some(dd) = date {
         let d = NaiveDateTime::from_timestamp(dd, 0);
-        let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(23, 59, 59);
+        let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(hour, min, sec);
         Some(d_0.timestamp())
     } else {
         None
     }
 }
 */
+
 pub fn set_next_day_and_00_00_00(date: Option<i64>) -> Option<i64> {
     if let Some(dd) = date {
         let d = NaiveDateTime::from_timestamp(dd, 0);
@@ -802,5 +840,27 @@ pub fn set_next_day_and_00_00_00(date: Option<i64>) -> Option<i64> {
         Some(d_0.add(Duration::days(1)).timestamp())
     } else {
         None
+    }
+}
+
+pub fn get_now_00_00_00() -> NaiveDateTime {
+    let d = NaiveDateTime::from_timestamp(Utc::now().timestamp(), 0);
+    let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(0, 0, 0);
+    d_0
+}
+
+pub fn i64_to_str_date_ymdthms(date: Option<i64>) -> String {
+    if let Some(date_to) = date {
+        NaiveDateTime::from_timestamp(date_to, 0).format("%Y-%m-%dT%H:%M:%S").to_string()
+    } else {
+        String::new()
+    }
+}
+
+pub fn i64_to_str_date(date: Option<i64>, format: &str) -> String {
+    if let Some(date_to) = date {
+        NaiveDateTime::from_timestamp(date_to, 0).format(format).to_string()
+    } else {
+        String::new()
     }
 }
