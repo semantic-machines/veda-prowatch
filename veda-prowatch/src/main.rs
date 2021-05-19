@@ -164,7 +164,7 @@ fn prepare_queue_element(backend: &mut Backend, ctx: &mut Context, queue_element
                         Err((ResultCode::Ok, "unknown v-s:tag".to_owned()))
                     };
 
-                    let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                    let res = set_update_status(backend, ctx, &mut new_state_indv, &upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                     if res == ResultCode::ConnectError {
                         return Err(res);
                     }
@@ -175,7 +175,7 @@ fn prepare_queue_element(backend: &mut Backend, ctx: &mut Context, queue_element
 
             if module_label == "winpak pe44 create" {
                 let upd_res = insert_to_prowatch(backend, ctx, &mut new_state_indv);
-                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let res = set_update_status(backend, ctx, &mut new_state_indv, &upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
@@ -184,7 +184,7 @@ fn prepare_queue_element(backend: &mut Backend, ctx: &mut Context, queue_element
             if module_label == "winpak pe44 update" {
                 // ДОБАВЛЕНИЕ НОВОЙ КАРТЫ ДЕРЖАТЕЛЮ
                 let upd_res = update_prowatch_data(backend, ctx, &mut new_state_indv);
-                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let res = set_update_status(backend, ctx, &mut new_state_indv, &upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
@@ -198,14 +198,14 @@ fn prepare_queue_element(backend: &mut Backend, ctx: &mut Context, queue_element
             }
             if module_label == "prowatch lock" {
                 let upd_res = lock_unlock_card(backend, ctx, &mut new_state_indv, true);
-                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let res = set_update_status(backend, ctx, &mut new_state_indv, &upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
             }
             if module_label == "prowatch unlock" {
                 let upd_res = lock_unlock_card(backend, ctx, &mut new_state_indv, false);
-                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let res = set_update_status(backend, ctx, &mut new_state_indv, &upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }

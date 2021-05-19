@@ -8,13 +8,14 @@ use v_module::v_onto::datatype::Lang;
 use v_module::v_onto::individual::Individual;
 use v_module::veda_backend::Backend;
 
-pub fn lock_unlock_card(module: &mut Backend, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
-    let mut indv_r = get_individual_from_predicate(module, indv_e, "v-s:backwardTarget")?;
+pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
+    let mut indv_r = get_individual_from_predicate(backend, indv_e, "v-s:backwardTarget")?;
     let r_type = indv_r.get_first_literal("rdf:type").unwrap_or_default();
     let mut count_prepared_card = 0;
+    let mut indv_p = Individual::default();
 
     if r_type == "mnd-s:ACSRecord" {
-        if let Ok(mut indv_x) = get_individual_from_predicate(module, &mut indv_r, "v-s:backwardTarget") {
+        if let Ok(mut indv_x) = get_individual_from_predicate(backend, &mut indv_r, "v-s:backwardTarget") {
             if let Some(indv_p_id) = indv_x.get_first_literal("v-s:backwardTarget") {
                 if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
                     for el in ctx.pw_api_client.badging_api().badges_badge_id_cards(&badge_id).unwrap_or_default() {
@@ -36,7 +37,7 @@ pub fn lock_unlock_card(module: &mut Backend, ctx: &mut Context, indv_e: &mut In
                         }
                     }
 
-                    if let Some(mut upd_indv) = module.get_individual(&indv_p_id, &mut Individual::default()) {
+                    if let Some(mut upd_indv) = backend.get_individual(&indv_p_id, &mut indv_p) {
                         upd_indv.parse_all();
                         upd_indv.remove("v-s:hasStatus");
                         if count_prepared_card > 0 {
@@ -54,7 +55,7 @@ pub fn lock_unlock_card(module: &mut Backend, ctx: &mut Context, indv_e: &mut In
                         }
 
                         if !upd_indv.is_empty() {
-                            if module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &mut upd_indv).result == ResultCode::Ok {
+                            if backend.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &mut upd_indv).result == ResultCode::Ok {
                                 info!("success update, uri={}", upd_indv.get_id());
                             } else {
                                 return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", upd_indv.get_id())));
@@ -75,6 +76,8 @@ pub fn lock_unlock_card(module: &mut Backend, ctx: &mut Context, indv_e: &mut In
     } else {
         return Err((ResultCode::Ok, format!("rdf:type is not mnd-s:ACSRecord, {}", indv_e.get_id())));
     }
+
+    send_message_of_status_lock_unlock(ctx, backend, &mut indv_p, need_lock)?;
 
     Ok(())
 }

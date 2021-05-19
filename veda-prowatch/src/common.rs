@@ -582,18 +582,18 @@ pub fn set_update_status(
     module: &mut Backend,
     ctx: &mut Context,
     indv: &mut Individual,
-    res: Result<(), (ResultCode, String)>,
+    res: &Result<(), (ResultCode, String)>,
     status_if_err: &str,
     status_if_ok: &str,
 ) -> ResultCode {
     indv.parse_all();
     if let Err((sync_res, info)) = res {
-        if sync_res == ResultCode::ConnectError {
-            return sync_res;
+        if *sync_res == ResultCode::ConnectError {
+            return sync_res.clone();
         }
         indv.set_uri("v-s:hasStatus", status_if_err);
         set_err(module, &ctx.sys_ticket, indv, &info);
-        return sync_res;
+        return sync_res.clone();
     }
 
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
@@ -747,7 +747,7 @@ pub fn get_levels(card: Value) -> Vec<(String, String)> {
 
 // 5. ВРЕМЕННОЕ ДОБАВЛЕНИЕ УРОВНЕЙ ДОСТУПА
 pub fn temp_add_level_access(
-    module: &mut Backend,
+    backend: &mut Backend,
     ctx: &mut Context,
     indv_c: &mut Individual,
     access_levels: &mut HashSet<String>,
@@ -761,9 +761,9 @@ pub fn temp_add_level_access(
     // [список исключающих уровней] = [C]["mnd-s:hasTemporaryAccessLevel"]["mnd-s:hasMutuallyExclusiveAccessLevel"]["v-s:registrationNumberAdd"]
     // (mnd-s:hasTemporaryAccessLevel и mnd-s:hasMutuallyExclusiveAccessLevel могуть быть множественными)
 
-    let mut alindvs = set_hashset_from_field_field(module, indv_c, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", access_levels);
+    let mut alindvs = set_hashset_from_field_field(backend, indv_c, "mnd-s:hasTemporaryAccessLevel", "v-s:registrationNumberAdd", access_levels);
     for aclv in alindvs.iter_mut() {
-        set_hashset_from_field_field(module, aclv, "mnd-s:hasMutuallyExclusiveAccessLevel", "v-s:registrationNumberAdd", &mut mutually_exclusive_levels);
+        set_hashset_from_field_field(backend, aclv, "mnd-s:hasMutuallyExclusiveAccessLevel", "v-s:registrationNumberAdd", &mut mutually_exclusive_levels);
     }
 
     // 2) запрашиваем данные карты, чтобы получить уровни доступа, которые указаны сейчас в  PW, запоминаем [уровни доступа]
@@ -868,4 +868,83 @@ pub fn i64_to_str_date(date: Option<i64>, format: &str) -> String {
     } else {
         String::new()
     }
+}
+
+pub fn send_message_of_status_lock_unlock(ctx: &mut Context, backend: &mut Backend, indv_p: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
+    let owner = if let Some(owner) = indv_p.get_first_literal("mnd-s:passVehicleRegistrationNumber") {
+        owner
+    } else {
+        let mut indv = get_individual_from_predicate(backend, indv_p, "mnd-s:lockedPerson")?;
+        indv.get_first_literal("rdfs:label").unwrap_or_default()
+    };
+
+    let (reason_uri, reason_txt) = if let Ok(mut indv) = get_individual_from_predicate(backend, indv_p, "v-s:hasLockedReason") {
+        (indv.get_id().to_owned(), indv.get_first_literal("rdfs:label").unwrap_or_default())
+    } else {
+        ("".to_owned(), "".to_owned())
+    };
+
+    let mut i = get_individual_from_predicate(backend, indv_p, "v-s:responsibleOrganization")?;
+    let to = get_individual_from_predicate(backend, &mut i, "v-s:hasContractorProfileSafety")?.get_first_literal("mnd-s:responsiblePersons");
+
+    let mut message = Individual::default();
+    message.set_id(&("d:msg_".to_owned() + &Uuid::new_v4().to_string()));
+    message.set_uri("rdf:type", "v-s:Email");
+
+    if let Some(v) = to {
+        message.set_uri("v-wf:to", &v);
+    }
+
+    if need_lock {
+        if reason_uri == "d:c820270f5f424107a5c54bfeeebfa095" {
+            if let Some(v) = indv_p.get_first_literal("v-s:creator") {
+                message.set_uri("v-wf:from", &v);
+            }
+        }
+
+        if reason_uri == "d:a0aoowjbm91ef2lw57c8lo29772" {
+            message.set_string("v-s:senderMailbox", "DocFlow.Syktyvkar@mondigroup.com", Lang::NONE);
+        }
+
+        message.set_string("v-s:subject", "Optiflow. Уведомление: Заблокирован пропуск", Lang::RU);
+        message.set_string(
+            "v-s:messageBody",
+            &format!(
+                " \
+        Выполнена блокировка карт: {} \n \
+        Причина блокировки: {} \n \
+        \n
+        Это сообщение сформировано автоматически. Отвечать на него не нужно. \n \
+        Система Optiflow ",
+                owner, reason_txt
+            ),
+            Lang::RU,
+        );
+    } else {
+        message.set_string("v-s:senderMailbox", "DocFlow.Syktyvkar@mondigroup.com", Lang::NONE);
+
+        message.set_string("v-s:subject", "Optiflow. Уведомление: Разблокирован пропуск", Lang::RU);
+        message.set_string(
+            "v-s:messageBody",
+            &format!(
+                " \
+        Выполнена разблокировка карт: {} \n \
+        Причина блокировки: {} \n \
+        \n
+        Это сообщение сформировано автоматически. Отвечать на него не нужно. \n \
+        Система Optiflow ",
+                owner, reason_txt
+            ),
+            Lang::RU,
+        );
+    }
+
+    let res = backend.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &message);
+    if res.result != ResultCode::Ok {
+        error!("fail update, uri={}, result_code={:?}", message.get_id(), res.result);
+    } else {
+        info!("success update, uri={}", message.get_id());
+    }
+
+    Ok(())
 }
