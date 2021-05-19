@@ -235,3 +235,41 @@ put http://syk-vs149.mp.local:8734/pwapi/badges/cards
 
 если выполняем включение хотя бы одной карты (предыдущий пункт), то [P]["v-s:hasStatus"] = "v-s:StatusUnlocked" (uri)
 если включение карт не выполняется (нет действующих по сроку), то [P]["v-s:hasStatus"] = "mnd-s:StatusProcessedWithoutCard" (uri)
+
+
+4. УВЕДОМЛЕНИЕ
+После успешного выполнения блокировки/разблокировки карт ( обработки v-s:ExternalModuleHandler с v-s:moduleLabel = "prowatch unlock" || "prowatch lock" с результатом v-s:hasStatus v-s:StatusAccepted ) формировать письмо в OF
+[E] - объект v-s:ExternalModuleHandler
+[P] - объект запрос на блокировку mnd-s:PassBlockingRequest [E]["v-s:backwardTarget"]["v-s:backwardTarget"]["v-s:backwardTarget"]
+
+owner = [P]["mnd-s:lockedPerson"]["rdfs:label"] или [P]["mnd-s:passVehicleRegistrationNumber"], будет что-то одно в объекте
+reason = [P]["v-s:hasLockedReason"]["rdfs:label"]
+
+Если "prowatch unlock":
+отправитель система
+v-s:senderMailbox = "DocFlow.Syktyvkar@mondigroup.com"
+v-wf:to = [P]["v-s:responsibleOrganization"]["v-s:hasContractorProfileSafety"]["mnd-s:responsiblePersons"]
+v-s:subject = "Optiflow. Уведомление: Разблокирован пропуск"
+v-s:messageBody = 
+"
+Выполнена разблокировка карт: <owner> 
+Причина блокировки: <reason> 
+
+Это сообщение сформировано автоматически. Отвечать на него не нужно. 
+Система Optiflow
+"
+
+Если "prowatch lock":
+отправитель система
+v-wf:from = [P]["v-s:creator"] заполняется, если блокировка по аудиту ( v-s:hasLockedReason = d:c820270f5f424107a5c54bfeeebfa095 )
+v-s:senderMailbox = "DocFlow.Syktyvkar@mondigroup.com" заполняется, если блокировка по досье ( v-s:hasLockedReason = d:a0aoowjbm91ef2lw57c8lo29772 )
+v-wf:to = [P]["v-s:responsibleOrganization"]["v-s:hasContractorProfileSafety"]["mnd-s:responsiblePersons"]
+v-s:subject = "Optiflow. Уведомление: Заблокирован пропуск"
+v-s:messageBody = 
+"
+Выполнена блокировка карт: <owner> 
+Причина блокировки: <reason> 
+
+Это сообщение сформировано автоматически. Отвечать на него не нужно. 
+Система Optiflow
+"
