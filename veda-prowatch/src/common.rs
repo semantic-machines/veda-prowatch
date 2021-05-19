@@ -13,13 +13,13 @@ use std::fs::File;
 use std::io::Write;
 use std::ops::{Add, Sub};
 use uuid::Uuid;
-use v_module::module::Module;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
 use v_module::v_onto::datatype::Lang;
 use v_module::v_onto::individual::Individual;
 use v_module::v_onto::onto::Onto;
 use v_module::v_search::common::FTQuery;
+use v_module::veda_backend::Backend;
 use voca_rs::chop;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -39,7 +39,7 @@ pub struct Context {
     pub access_level_dict: HashMap<String, String>,
 }
 
-pub fn load_access_level_dir(module: &mut Module, sys_ticket: &str) -> HashMap<String, String> {
+pub fn load_access_level_dir(module: &mut Backend, sys_ticket: &str) -> HashMap<String, String> {
     let mut dir = HashMap::new();
     let res = module.fts.query(FTQuery::new_with_ticket(&sys_ticket, "'rdf:type'=='mnd-s:AccessLevel'"));
     if res.result_code == ResultCode::Ok && res.count > 0 {
@@ -85,7 +85,7 @@ pub fn split_str_for_winpak_list(src: &str, len: usize, res: &mut Vec<String>) {
     }
 }
 
-pub fn get_individual_from_predicate(module: &mut Module, src: &mut Individual, predicate: &str) -> Result<Individual, (ResultCode, String)> {
+pub fn get_individual_from_predicate(module: &mut Backend, src: &mut Individual, predicate: &str) -> Result<Individual, (ResultCode, String)> {
     let indv_id = src.get_first_literal(predicate);
     if indv_id.is_none() {
         error!("not found [{}] in {}", predicate, src.get_id());
@@ -100,7 +100,7 @@ pub fn get_individual_from_predicate(module: &mut Module, src: &mut Individual, 
     Ok(*indv_c.unwrap())
 }
 
-pub fn clear_card_and_set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
+pub fn clear_card_and_set_err(module: &mut Backend, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
     indv.parse_all();
     indv.clear("mnd-s:briefingDate");
     indv.clear("mnd-s:hasAccessLevel");
@@ -123,7 +123,7 @@ pub fn clear_card_and_set_err(module: &mut Module, sys_ticket: &str, indv: &mut 
     }
 }
 
-pub fn set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
+pub fn set_err(module: &mut Backend, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
     indv.parse_all();
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
@@ -137,7 +137,7 @@ pub fn set_err(module: &mut Module, sys_ticket: &str, indv: &mut Individual, err
 }
 
 pub fn set_hashset_from_field_field(
-    module: &mut Module,
+    module: &mut Backend,
     indv: &mut Individual,
     predicate: &str,
     inner_predicate: &str,
@@ -159,7 +159,7 @@ pub fn set_hashset_from_field_field(
     indvs
 }
 
-pub fn set_str_from_field_field(module: &mut Module, indv: &mut Individual, predicate: &str, innner_predicate: &str) -> String {
+pub fn set_str_from_field_field(module: &mut Backend, indv: &mut Individual, predicate: &str, innner_predicate: &str) -> String {
     let mut out_data = String::new();
     if let Some(uris) = indv.get_literals(predicate) {
         for l in uris {
@@ -253,7 +253,12 @@ pub fn get_pass_type(indv_p: &mut Individual) -> PassType {
     PassType::Unknown
 }
 
-pub fn get_badge_use_request_indv(module: &mut Module, ctx: &mut Context, pass_type: Option<PassType>, indv_p: &mut Individual) -> (PassType, Result<Vec<Value>, Error>) {
+pub fn get_badge_use_request_indv(
+    module: &mut Backend,
+    ctx: &mut Context,
+    pass_type: Option<PassType>,
+    indv_p: &mut Individual,
+) -> (PassType, Result<Vec<Value>, Error>) {
     let tpass: PassType = if let Some(pt) = pass_type {
         pt
     } else {
@@ -373,7 +378,7 @@ pub fn add_date_to_fields(list: &mut Vec<Value>, fname: &str, src: Option<i64>) 
     }
 }
 
-pub fn get_literal_of_link(module: &mut Module, indv: &mut Individual, link: &str, field: &str) -> Option<String> {
+pub fn get_literal_of_link(module: &mut Backend, indv: &mut Individual, link: &str, field: &str) -> Option<String> {
     module.get_literal_of_link(indv, link, field, &mut Individual::default())
 }
 
@@ -574,7 +579,7 @@ pub fn set_card_status(ctx: &mut Context, card_number: &str, card_status: i32) -
 }
 
 pub fn set_update_status(
-    module: &mut Module,
+    module: &mut Backend,
     ctx: &mut Context,
     indv: &mut Individual,
     res: Result<(), (ResultCode, String)>,
@@ -642,7 +647,7 @@ pub fn str_date_to_i64(value: &str, offset: Option<Duration>) -> Option<i64> {
     return None;
 }
 
-pub(crate) fn veda_photo_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) {
+pub(crate) fn veda_photo_to_pw(module: &mut Backend, ctx: &mut Context, badge_id: &str, src: &mut Individual) {
     if let Ok(mut file) = get_individual_from_predicate(module, src, "v-s:hasImage") {
         info!("extract photo {} from {}", file.get_id(), src.get_id());
 
@@ -661,7 +666,7 @@ pub(crate) fn veda_photo_to_pw(module: &mut Module, ctx: &mut Context, badge_id:
     }
 }
 
-pub(crate) fn pw_photo_to_veda(module: &mut Module, ctx: &mut Context, badge_id: &str, dest: &mut Individual) {
+pub(crate) fn pw_photo_to_veda(module: &mut Backend, ctx: &mut Context, badge_id: &str, dest: &mut Individual) {
     if let Ok(msg_base64) = ctx.pw_api_client.badging_api().badges_badge_id_photo(&badge_id) {
         if let Ok(photo_data) = decode(&msg_base64.as_bytes()[1..msg_base64.len() - 1]) {
             let files_dir_path = "data/files";
@@ -742,7 +747,7 @@ pub fn get_levels(card: Value) -> Vec<(String, String)> {
 
 // 5. ВРЕМЕННОЕ ДОБАВЛЕНИЕ УРОВНЕЙ ДОСТУПА
 pub fn temp_add_level_access(
-    module: &mut Module,
+    module: &mut Backend,
     ctx: &mut Context,
     indv_c: &mut Individual,
     access_levels: &mut HashSet<String>,

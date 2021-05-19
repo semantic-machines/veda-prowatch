@@ -1,6 +1,5 @@
 use prowatch_client::apis::Error;
 use serde_json::Value;
-use v_module::module::*;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::*;
 use v_module::v_onto::individual::*;
@@ -9,8 +8,9 @@ use crate::common::{
     clear_card_and_set_err, create_asc_record, get_badge_use_request_indv, get_str_from_value, pw_photo_to_veda, set_badge_to_indv, str_value2indv, Context,
     CARD_NUMBER_FIELD_NAME,
 };
+use v_module::veda_backend::Backend;
 
-pub fn sync_data_from_prowatch(module: &mut Module, ctx: &mut Context, src_indv: &mut Individual) -> ResultCode {
+pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> ResultCode {
     src_indv.parse_all();
     let mut asc_indvs = vec![];
 

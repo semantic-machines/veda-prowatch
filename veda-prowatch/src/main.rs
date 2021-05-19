@@ -20,6 +20,8 @@ use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
 use v_module::v_onto::individual::Individual;
 use v_module::v_onto::onto::Onto;
+use v_module::v_storage::storage::*;
+use v_module::veda_backend::Backend;
 use v_queue::consumer::Consumer;
 
 fn main() -> Result<(), i32> {
@@ -34,8 +36,10 @@ fn main() -> Result<(), i32> {
 
 fn listen_queue<'a>() -> Result<(), i32> {
     let mut module = Module::default();
+    let mut backend = Backend::create(StorageMode::ReadOnly, false);
+
     let sys_ticket;
-    if let Ok(t) = module.get_sys_ticket_id() {
+    if let Ok(t) = backend.get_sys_ticket_id() {
         sys_ticket = t;
     } else {
         error!("fail get system ticket");
@@ -46,7 +50,7 @@ fn listen_queue<'a>() -> Result<(), i32> {
     let mut onto = Onto::default();
 
     info!("load onto start");
-    load_onto(&mut module.storage, &mut onto);
+    load_onto(&mut backend.storage, &mut onto);
     info!("load onto end");
 
     let module_info = ModuleInfo::new("./data", "prowatch-connector", true);
@@ -79,34 +83,35 @@ fn listen_queue<'a>() -> Result<(), i32> {
         sys_ticket: sys_ticket.to_owned(),
         onto,
         pw_api_client: PWAPIClient::new(configuration),
-        access_level_dict: load_access_level_dir(&mut module, &sys_ticket),
+        access_level_dict: load_access_level_dir(&mut backend, &sys_ticket),
     };
 
     module.listen_queue(
         &mut queue_consumer,
         &mut ctx,
-        &mut (before_batch as fn(&mut Module, &mut Context, batch_size: u32) -> Option<u32>),
-        &mut (prepare as fn(&mut Module, &mut Context, &mut Individual, my_consumer: &Consumer) -> Result<bool, PrepareError>),
-        &mut (after_batch as fn(&mut Module, &mut Context, prepared_batch_size: u32) -> Result<bool, PrepareError>),
-        &mut (heartbeat as fn(&mut Module, &mut Context) -> Result<(), PrepareError>),
+        &mut (before_batch as fn(&mut Backend, &mut Context, batch_size: u32) -> Option<u32>),
+        &mut (prepare as fn(&mut Backend, &mut Context, &mut Individual, my_consumer: &Consumer) -> Result<bool, PrepareError>),
+        &mut (after_batch as fn(&mut Backend, &mut Context, prepared_batch_size: u32) -> Result<bool, PrepareError>),
+        &mut (heartbeat as fn(&mut Backend, &mut Context) -> Result<(), PrepareError>),
+        &mut backend,
     );
     Ok(())
 }
 
-fn heartbeat(_module: &mut Module, _ctx: &mut Context) -> Result<(), PrepareError> {
+fn heartbeat(_module: &mut Backend, _ctx: &mut Context) -> Result<(), PrepareError> {
     Ok(())
 }
 
-fn before_batch(_module: &mut Module, _ctx: &mut Context, _size_batch: u32) -> Option<u32> {
+fn before_batch(_module: &mut Backend, _ctx: &mut Context, _size_batch: u32) -> Option<u32> {
     None
 }
 
-fn after_batch(_module: &mut Module, _ctx: &mut Context, _prepared_batch_size: u32) -> Result<bool, PrepareError> {
+fn after_batch(_module: &mut Backend, _ctx: &mut Context, _prepared_batch_size: u32) -> Result<bool, PrepareError> {
     Ok(false)
 }
 
-fn prepare(module: &mut Module, ctx: &mut Context, queue_element: &mut Individual, _my_consumer: &Consumer) -> Result<bool, PrepareError> {
-    if let Err(e) = prepare_queue_element(module, ctx, queue_element) {
+fn prepare(backend: &mut Backend, ctx: &mut Context, queue_element: &mut Individual, _my_consumer: &Consumer) -> Result<bool, PrepareError> {
+    if let Err(e) = prepare_queue_element(backend, ctx, queue_element) {
         error!("fail prepare queue element, err={:?}", e);
         if e == ResultCode::ConnectError {
             error!("sleep and repeate...");
@@ -117,7 +122,7 @@ fn prepare(module: &mut Module, ctx: &mut Context, queue_element: &mut Individua
     Ok(true)
 }
 
-fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: &mut Individual) -> Result<(), ResultCode> {
+fn prepare_queue_element(backend: &mut Backend, ctx: &mut Context, queue_element: &mut Individual) -> Result<(), ResultCode> {
     let cmd = get_cmd(queue_element).unwrap_or(IndvOp::None);
     if cmd == IndvOp::None {
         error!("cmd is none");
@@ -141,25 +146,25 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
 
     for itype in itypes {
         if itype == "mnd-s:SourceDataRequestForPass" {
-            let _res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
+            let _res = sync_data_from_prowatch(backend, ctx, &mut new_state_indv);
         } else if itype == "mnd-s:SourceDataRequestForPassByNames" {
             // ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД
             if let Some(tag) = new_state_indv.get_first_literal("v-s:tag") {
                 if tag == "Auto" || tag == "Human" {
-                    let res = sync_data_from_prowatch(module, ctx, &mut new_state_indv);
+                    let res = sync_data_from_prowatch(backend, ctx, &mut new_state_indv);
                     if res == ResultCode::ConnectError {
                         return Err(res);
                     }
                 } else {
                     let upd_res = if tag == "AutoWithCompany" {
-                        lock_holder(module, ctx, PassType::Vehicle, &mut new_state_indv)
+                        lock_holder(backend, ctx, PassType::Vehicle, &mut new_state_indv)
                     } else if tag == "HumanWithCompany" {
-                        lock_holder(module, ctx, PassType::Human, &mut new_state_indv)
+                        lock_holder(backend, ctx, PassType::Human, &mut new_state_indv)
                     } else {
                         Err((ResultCode::Ok, "unknown v-s:tag".to_owned()))
                     };
 
-                    let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                    let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                     if res == ResultCode::ConnectError {
                         return Err(res);
                     }
@@ -169,8 +174,8 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
             let module_label = new_state_indv.get_first_literal("v-s:moduleLabel").unwrap_or_default();
 
             if module_label == "winpak pe44 create" {
-                let upd_res = insert_to_prowatch(module, ctx, &mut new_state_indv);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let upd_res = insert_to_prowatch(backend, ctx, &mut new_state_indv);
+                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
@@ -178,29 +183,29 @@ fn prepare_queue_element(module: &mut Module, ctx: &mut Context, queue_element: 
 
             if module_label == "winpak pe44 update" {
                 // ДОБАВЛЕНИЕ НОВОЙ КАРТЫ ДЕРЖАТЕЛЮ
-                let upd_res = update_prowatch_data(module, ctx, &mut new_state_indv);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let upd_res = update_prowatch_data(backend, ctx, &mut new_state_indv);
+                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
             }
 
             if module_label == "winpak pe44 delete" {
-                let res = delete_from_prowatch(module, ctx, &mut new_state_indv);
+                let res = delete_from_prowatch(backend, ctx, &mut new_state_indv);
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
             }
             if module_label == "prowatch lock" {
-                let upd_res = lock_unlock_card(module, ctx, &mut new_state_indv, true);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let upd_res = lock_unlock_card(backend, ctx, &mut new_state_indv, true);
+                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }
             }
             if module_label == "prowatch unlock" {
-                let upd_res = lock_unlock_card(module, ctx, &mut new_state_indv, false);
-                let res = set_update_status(module, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
+                let upd_res = lock_unlock_card(backend, ctx, &mut new_state_indv, false);
+                let res = set_update_status(backend, ctx, &mut new_state_indv, upd_res, "v-s:StatusRejected", "v-s:StatusAccepted");
                 if res == ResultCode::ConnectError {
                     return Err(res);
                 }

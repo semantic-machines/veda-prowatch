@@ -2,13 +2,13 @@ use crate::common::*;
 use prowatch_client::apis::Error;
 use serde_json::json;
 use std::collections::HashSet;
-use v_module::module::Module;
 use v_module::v_api::app::ResultCode;
 use v_module::v_api::IndvOp;
 use v_module::v_onto::datatype::Lang;
 use v_module::v_onto::individual::Individual;
+use v_module::veda_backend::Backend;
 
-pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
+pub fn lock_unlock_card(module: &mut Backend, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
     let mut indv_r = get_individual_from_predicate(module, indv_e, "v-s:backwardTarget")?;
     let r_type = indv_r.get_first_literal("rdf:type").unwrap_or_default();
     let mut count_prepared_card = 0;
@@ -79,7 +79,7 @@ pub fn lock_unlock_card(module: &mut Module, ctx: &mut Context, indv_e: &mut Ind
     Ok(())
 }
 
-pub fn lock_holder(module: &mut Module, ctx: &mut Context, pass_type: PassType, indv_s: &mut Individual) -> Result<(), (ResultCode, String)> {
+pub fn lock_holder(module: &mut Backend, ctx: &mut Context, pass_type: PassType, indv_s: &mut Individual) -> Result<(), (ResultCode, String)> {
     let (_, wbadges) = get_badge_use_request_indv(module, ctx, Some(pass_type.clone()), indv_s);
     if let Err(e) = wbadges {
         error!("badges: err={:?}", e);
@@ -136,7 +136,7 @@ pub fn lock_holder(module: &mut Module, ctx: &mut Context, pass_type: PassType, 
     Ok(())
 }
 
-pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Individual) -> Result<(), (ResultCode, String)> {
+pub fn insert_to_prowatch(module: &mut Backend, ctx: &mut Context, indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut new_badge_id = None;
     let backward_target = indv.get_first_literal("v-s:backwardTarget");
     if backward_target.is_none() {
@@ -250,7 +250,7 @@ pub fn insert_to_prowatch(module: &mut Module, ctx: &mut Context, indv: &mut Ind
     add_card_with_access_to_pw(module, ctx, &badge_id, indv_p)
 }
 
-pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
+pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut indv_c = get_individual_from_predicate(module, indv_e, "v-s:backwardTarget")?;
     let r_type = indv_c.get_first_literal("rdf:type").unwrap_or_default();
 
@@ -479,11 +479,11 @@ pub fn update_prowatch_data(module: &mut Module, ctx: &mut Context, indv_e: &mut
     return Ok(());
 }
 
-pub fn delete_from_prowatch(_module: &mut Module, _ctx: &mut Context, _indv: &mut Individual) -> ResultCode {
+pub fn delete_from_prowatch(_module: &mut Backend, _ctx: &mut Context, _indv: &mut Individual) -> ResultCode {
     ResultCode::Ok
 }
 
-fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: &str, src: &mut Individual) -> Result<(), (ResultCode, String)> {
+fn add_card_with_access_to_pw(module: &mut Backend, ctx: &mut Context, badge_id: &str, src: &mut Individual) -> Result<(), (ResultCode, String)> {
     let mut access_levels = Default::default();
     set_hashset_from_field_field(module, src, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
     let alj = access_levels_to_json_for_new(access_levels);
@@ -538,7 +538,7 @@ fn add_card_with_access_to_pw(module: &mut Module, ctx: &mut Context, badge_id: 
     Ok(())
 }
 
-fn update_asc_record(module: &mut Module, ctx: &mut Context, indv_r: &mut Individual, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
+fn update_asc_record(module: &mut Backend, ctx: &mut Context, indv_r: &mut Individual, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
     if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
         let mut indv_s = get_individual_from_predicate(module, indv_r, "v-s:backwardTarget")?;
         let mut indv_p = get_individual_from_predicate(module, &mut indv_s, "v-s:backwardTarget")?;
