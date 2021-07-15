@@ -1,3 +1,4 @@
+use array_tool::vec::Union;
 use base64::decode;
 use base64::encode;
 use chrono::offset::LocalResult::Single;
@@ -269,7 +270,10 @@ pub fn get_badge_use_request_indv(
         let res_badge = if tpass == PassType::Vehicle {
             let car_number = indv_p.get_first_literal("mnd-s:passVehicleRegistrationNumber").unwrap_or_default();
 
-            ctx.pw_api_client.badging_api().badges_key_key_value("BADGE_FNAME", &format!("%25{}%25", &car_number))
+            let l1 = ctx.pw_api_client.badging_api().badges_key_key_value("BADGE_FNAME", &format!("%25{}%25", &car_number)).unwrap_or_default();
+            let l2 = ctx.pw_api_client.badging_api().badges_key_key_value("BADGE_LNAME", &format!("%25{}%25", &car_number)).unwrap_or_default();
+
+            Ok(l1.union(l2))
         } else if tpass == PassType::Human {
             let mut first_name = String::new();
             let mut last_name = String::new();

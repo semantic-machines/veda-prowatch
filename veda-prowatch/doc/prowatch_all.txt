@@ -283,7 +283,7 @@ get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
 3) выполняем проверку наличия взаимоисключающих другу друга уровней доступа и при необходимости переносим срок пересекающихся уровней 
 Из ответа в (2) получаем уровни доступа, объекты лежат в ClearanceCodes.ClearCode, и для каждого в [уровни доступа] выполняем проверку:
     3.1) если ClearCodeID среди [список исключений] нет, то переходим к следующему
-    3.2) если ClearCodeID уровня есть среди "списка взамиоисключающих уровней", то проверяем вид уровня доступа
+    3.2) если ClearCodeID уровня есть среди [список исключений], то проверяем вид уровня доступа
 
         3.1.1) если уровень доступа постоянный ( ValidTo отсутствует или ValidTo='2100-01-01T00:00:00' ), то удаляем уровни и добавляем в виде временных
             - удаление уровней 
@@ -300,7 +300,6 @@ get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
                     "ValidTo": "2100-01-01T00:00:00"
                 }
             ]
-
         3.1.2) если уровень доступа временный ( ValidTo есть и !='2100-01-01T00:00:00' ), то проверяем сроки действия
             - срок действия меньше ValidTo <= [C]["v-s:dateToPlan"] , то удаляем уровень
             delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{значение ClearCodeID}
@@ -325,7 +324,7 @@ get https://<hostname>:8734/pwapi/badges/cards/{cardNumber}
 cardNumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
 timed_accessLevel = [C]["mnd-s:hasTemporaryAccessLevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
 timed_datefrom =  сегодня в формате  2020-12-08T00:00:00
-timed_dateto = [C]["v-s:dateToPlan"] со временем 23:50:00 в формате 2020-12-08T23:50:00
+timed_dateto = [C]["v-s:dateToPlan"] +1 день
 
     - удаляем 
     delete https://<hostname>:8734/pwapi/badges/cards/{cardNumber}/clearcodes/{timed_accessLevel}
@@ -461,7 +460,9 @@ put http://syk-vs149.mp.local:8734/pwapi/badges
 
 car_number = [S]["mnd-s:passVehicleRegistrationNumber"]
 
+Выполняем 2 запроса и объединяем:
 get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_FNAME/{car_number}%25
+get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/{car_number}%25
 
 пример ответа:
 [

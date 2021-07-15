@@ -14,8 +14,9 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 base64 = "0.13.0"
 url = "2.2.0"
 jsonpath = "0.1.1"
+array_tool = "1.0.3"
 
 v_queue = "0.1.7"
-v_module = { package = "v-common-module", version = "=0.1.39" }
+v_module = { package = "v-common-module", version = "=0.1.42" }
 
 prowatch_client = { path = "../prowatch-client" }
