@@ -16,7 +16,7 @@ url = "2.2.0"
 jsonpath = "0.1.1"
 array_tool = "1.0.3"
 
-v_queue = "0.1.7"
-v_module = { package = "v-common-module", version = "=0.1.42" }
+v_queue = "=0.1.9"
+v_common = { package = "v-common", version = "=0.1.64" }
 
 prowatch_client = { path = "../prowatch-client" }

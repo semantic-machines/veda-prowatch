@@ -1,14 +1,14 @@
 use prowatch_client::apis::Error;
 use serde_json::Value;
-use v_module::v_api::app::ResultCode;
-use v_module::v_api::*;
-use v_module::v_onto::individual::*;
 
 use crate::common::{
     clear_card_and_set_err, create_asc_record, get_badge_use_request_indv, get_str_from_value, pw_photo_to_veda, set_badge_to_indv, str_value2indv, Context,
     CARD_NUMBER_FIELD_NAME,
 };
-use v_module::veda_backend::Backend;
+use v_common::module::veda_backend::Backend;
+use v_common::onto::individual::Individual;
+use v_common::v_api::obj::ResultCode;
+use v_common::v_api::api_client::{IndvOp};
 
 pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> ResultCode {
     src_indv.parse_all();
@@ -87,21 +87,25 @@ pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv
 
     src_indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, src_indv);
-    if res.result != ResultCode::Ok {
-        error!("fail update, uri={}, result_code={:?}", src_indv.get_id(), res.result);
-        return ResultCode::DatabaseModifiedError;
-    } else {
-        info!("success update, uri={}", src_indv.get_id());
+    match module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, src_indv) {
+        Ok(_) => {
+            info!("success update, uri={}", src_indv.get_id());
+        }
+        Err(e) => {
+            error!("fail update, uri={}, result_code={:?}", src_indv.get_id(), e.result);
+            return ResultCode::DatabaseModifiedError;
+        }
     }
 
     for el in asc_indvs.iter_mut() {
-        let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el);
-        if res.result == ResultCode::Ok {
-            info!("success update, uri={}", el.get_id());
-        } else {
-            error!("fail update, uri={}, result_code={:?}", el.get_id(), res.result);
-            return ResultCode::DatabaseModifiedError;
+        match module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el) {
+            Ok(_) => {
+                info!("success update, uri={}", src_indv.get_id());
+            }
+            Err(e) => {
+                error!("fail update, uri={}, result_code={:?}", src_indv.get_id(), e.result);
+                return ResultCode::DatabaseModifiedError;
+            }
         }
     }
 

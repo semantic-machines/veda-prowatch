@@ -2,11 +2,11 @@ use crate::common::*;
 use prowatch_client::apis::Error;
 use serde_json::json;
 use std::collections::HashSet;
-use v_module::v_api::app::ResultCode;
-use v_module::v_api::IndvOp;
-use v_module::v_onto::datatype::Lang;
-use v_module::v_onto::individual::Individual;
-use v_module::veda_backend::Backend;
+use v_common::module::veda_backend::Backend;
+use v_common::onto::individual::Individual;
+use v_common::v_api::obj::ResultCode;
+use v_common::v_api::api_client::IndvOp;
+use v_common::onto::datatype::Lang;
 
 pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut Individual, need_lock: bool) -> Result<(), (ResultCode, String)> {
     let mut indv_r = get_individual_from_predicate(backend, indv_e, "v-s:backwardTarget")?;
@@ -55,7 +55,7 @@ pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut I
                         }
 
                         if !upd_indv.is_empty() {
-                            if backend.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &mut upd_indv).result == ResultCode::Ok {
+                            if backend.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &mut upd_indv).is_ok() {
                                 info!("success update, uri={}", upd_indv.get_id());
                             } else {
                                 return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", upd_indv.get_id())));
@@ -129,8 +129,7 @@ pub fn lock_holder(module: &mut Backend, ctx: &mut Context, pass_type: PassType,
     }
 
     for el in asc_indvs.iter_mut() {
-        let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el);
-        if res.result == ResultCode::Ok {
+        if module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el).is_ok() {
             info!("success update, uri={}", el.get_id());
         } else {
             return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", el.get_id())));

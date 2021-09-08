@@ -14,14 +14,14 @@ use std::fs::File;
 use std::io::Write;
 use std::ops::{Add, Sub};
 use uuid::Uuid;
-use v_module::v_api::app::ResultCode;
-use v_module::v_api::IndvOp;
-use v_module::v_onto::datatype::Lang;
-use v_module::v_onto::individual::Individual;
-use v_module::v_onto::onto::Onto;
-use v_module::v_search::common::FTQuery;
-use v_module::veda_backend::Backend;
 use voca_rs::chop;
+use v_common::search::common::FTQuery;
+use v_common::module::veda_backend::Backend;
+use v_common::onto::individual::Individual;
+use v_common::v_api::obj::ResultCode;
+use v_common::onto::datatype::Lang;
+use v_common::v_api::api_client::{IndvOp};
+use v_common::onto::onto::Onto;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PassType {
@@ -116,11 +116,13 @@ pub fn clear_card_and_set_err(module: &mut Backend, sys_ticket: &str, indv: &mut
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    let res = module.api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv);
-    if res.result != ResultCode::Ok {
-        error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
-    } else {
-        info!("success update, uri={}", indv.get_id());
+    match  module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
+        Ok(_) => {
+            info!("success update, uri={}", indv.get_id());
+        }
+        Err(e) => {
+            error!("fail update, uri={}, result_code={:?}", indv.get_id(), e.result);
+        }
     }
 }
 
@@ -129,11 +131,13 @@ pub fn set_err(module: &mut Backend, sys_ticket: &str, indv: &mut Individual, er
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    let res = module.api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv);
-    if res.result != ResultCode::Ok {
-        error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
-    } else {
-        info!("success update, uri={}", indv.get_id());
+    match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv){
+        Ok(_) => {
+            info!("success update, uri={}", indv.get_id());
+        }
+        Err(e) => {
+            error!("fail update, uri={}, result_code={:?}", indv.get_id(), e.result);
+        }
     }
 }
 
@@ -604,11 +608,13 @@ pub fn set_update_status(
     indv.set_uri("v-s:hasStatus", status_if_ok);
     indv.clear("v-s:errorMessage");
 
-    let res = module.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, indv);
-    if res.result != ResultCode::Ok {
-        error!("fail update, uri={}, result_code={:?}", indv.get_id(), res.result);
-    } else {
-        info!("success update, uri={}", indv.get_id());
+    match module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
+        Ok(_) => {
+            info!("success update, uri={}", indv.get_id());
+        }
+        Err(e) => {
+            error!("fail update, uri={}, result_code={:?}", indv.get_id(), e.result);
+        }
     }
     ResultCode::Ok
 }
@@ -708,7 +714,7 @@ pub(crate) fn pw_photo_to_veda(module: &mut Backend, ctx: &mut Context, badge_id
 
             dest.set_uri("v-s:attachment", indv_file.get_id());
 
-            let res = module.api.update(&ctx.sys_ticket, IndvOp::Put, &mut indv_file);
+            let res = module.mstorage_api.update(&ctx.sys_ticket, IndvOp::Put, &mut indv_file);
             if res.result != ResultCode::Ok {
                 error!("fail update, uri={}, result_code={:?}", indv_file.get_id(), res.result);
             } else {
@@ -943,11 +949,13 @@ pub fn send_message_of_status_lock_unlock(ctx: &mut Context, backend: &mut Backe
         );
     }
 
-    let res = backend.api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &message);
-    if res.result != ResultCode::Ok {
-        error!("fail update, uri={}, result_code={:?}", message.get_id(), res.result);
-    } else {
-        info!("success update, uri={}", message.get_id());
+    match backend.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &message) {
+        Ok(_) => {
+            info!("success update, uri={}", message.get_id());
+        }
+        Err(e) => {
+            error!("fail update, uri={}, result_code={:?}", message.get_id(), e.result);
+        }
     }
 
     Ok(())
