@@ -3,26 +3,28 @@ extern crate log;
 
 mod common;
 mod from_prowatch;
+mod lock;
 mod to_prowatch;
 
 use crate::common::{load_access_level_dir, set_update_status, Context, PassType};
 use crate::from_prowatch::sync_data_from_prowatch;
-use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, lock_holder, lock_unlock_card, update_prowatch_data};
+use crate::lock::{lock_holder, lock_unlock_card};
+use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, update_prowatch_data};
 use prowatch_client::apis::client::PWAPIClient;
 use prowatch_client::apis::configuration::Configuration;
 use std::thread;
 use std::time as std_time;
 use url::Url;
-use v_queue::consumer::Consumer;
-use v_common::module::module::{init_log, get_info_of_module, wait_module, wait_load_ontology, Module, PrepareError, get_cmd, get_inner_binobj_as_individual};
-use v_common::module::veda_backend::Backend;
-use v_common::storage::storage::StorageMode;
-use v_common::onto::onto::Onto;
-use v_common::onto::individual::Individual;
-use v_common::v_api::obj::ResultCode;
-use v_common::v_api::api_client::IndvOp;
 use v_common::module::common::load_onto;
 use v_common::module::info::ModuleInfo;
+use v_common::module::module::{get_cmd, get_info_of_module, get_inner_binobj_as_individual, init_log, wait_load_ontology, wait_module, Module, PrepareError};
+use v_common::module::veda_backend::Backend;
+use v_common::onto::individual::Individual;
+use v_common::onto::onto::Onto;
+use v_common::storage::storage::StorageMode;
+use v_common::v_api::api_client::IndvOp;
+use v_common::v_api::obj::ResultCode;
+use v_queue::consumer::Consumer;
 
 fn main() -> Result<(), i32> {
     init_log("VEDA-PROWATCH-CONNECTOR");

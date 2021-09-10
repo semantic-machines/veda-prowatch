@@ -14,14 +14,14 @@ use std::fs::File;
 use std::io::Write;
 use std::ops::{Add, Sub};
 use uuid::Uuid;
-use voca_rs::chop;
-use v_common::search::common::FTQuery;
 use v_common::module::veda_backend::Backend;
-use v_common::onto::individual::Individual;
-use v_common::v_api::obj::ResultCode;
 use v_common::onto::datatype::Lang;
-use v_common::v_api::api_client::{IndvOp};
+use v_common::onto::individual::Individual;
 use v_common::onto::onto::Onto;
+use v_common::search::common::FTQuery;
+use v_common::v_api::api_client::IndvOp;
+use v_common::v_api::obj::ResultCode;
+use voca_rs::chop;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PassType {
@@ -116,7 +116,7 @@ pub fn clear_card_and_set_err(module: &mut Backend, sys_ticket: &str, indv: &mut
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    match  module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
+    match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
         Ok(_) => {
             info!("success update, uri={}", indv.get_id());
         }
@@ -131,7 +131,7 @@ pub fn set_err(module: &mut Backend, sys_ticket: &str, indv: &mut Individual, er
     indv.set_string("v-s:errorMessage", err_text, Lang::RU);
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv){
+    match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
         Ok(_) => {
             info!("success update, uri={}", indv.get_id());
         }
@@ -482,13 +482,14 @@ pub fn get_custom_badge_as_list(el: &Value) -> Map<String, Value> {
     fields
 }
 
-pub fn create_asc_record(el: &Value, backward_id: &str) -> Individual {
+pub fn create_asc_record(el: &Value, backward_id: &str, cards: Vec<String>) -> Individual {
     let mut acs_record = Individual::default();
     acs_record.set_id(&("d:asc_".to_owned() + &Uuid::new_v4().to_string()));
     acs_record.set_uri("rdf:type", "mnd-s:ACSRecord");
     acs_record.set_uri("v-s:backwardProperty", "mnd-s:hasACSRecord");
     acs_record.set_uri("v-s:backwardTarget", backward_id);
     acs_record.set_bool("v-s:canRead", true);
+    acs_record.set_string("mnd-s:cardNumber", &format!("{:?}", cards), Lang::NONE);
 
     set_badge_to_indv(&el, &mut acs_record);
 

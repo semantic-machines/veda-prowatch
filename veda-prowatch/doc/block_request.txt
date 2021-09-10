@@ -10,7 +10,9 @@
 
 car_number = [S]["mnd-s:passVehicleRegistrationNumber"]
 
+Выполнить запросы и объединить:
 get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_FNAME/%25{car_number}%25
+get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/%25{car_number}%25
 
 пример ответа такой же, :
 [
@@ -56,7 +58,50 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_FNAME/%25{car_number}%
 В полученном перечне объектов ищем те в которых значение CustomBadgeFields/BADGE_COMPANY_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
 Если ничего не вернулось, то [S].["v-s:errorMessage"] = "Держатель не найден"
 
-Для каждого найденного держателя создать индивид класса mnd-s:ACSRecord и в него вписать:
+По результату выполнения запроса держателей (get http://syk-vs149.mp.local:8734/pwapi/badges/key/....) перед созданием объектов mnd-s:ACSRecord выполняем запрос карт по каждому полученному держателю. Цель - исключить держателей, у которых нет карт или все карты не действительны
+Для этого выполняется запрос:
+get http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/cards 
+
+где BadgeID = значение BadgeID из ответа по держателям
+[
+    {
+        "BadgeID": "0x002943313746444333462D394438392D3435",
+        "LastName": "Лапшин",
+        "FirstName": "Александр",
+        "CustomBadgeFields": [
+        ...
+        ]
+    }
+]
+
+пример ответа по карте:
+[
+  {
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "56029",
+    "CardStatus": 0,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2021-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+  },
+  {
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "5327",
+    "CardStatus": 1,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2020-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+  }
+]
+
+По результату ответа:
+    1) если у держателя нет карт, то объект mnd-s:ACSRecord не создается и переходим к следующему держателю
+    2) если карты есть, то из полученных объектов исключаем не действительные карты, где статус CardStatus=2 || 3 || 5 || 6
+    3) если в результате после исключения в (2) остаются карты, то для этого держателя создается объект mnd-s:ACSRecord со всеми ранее описанными полями и в дополнение заполняем mnd-s:cardNumber = все значения CardNumber полученных объектов, прошедших проверку
+
+Создать индивид класса mnd-s:ACSRecord, если условия выполнены и в него вписать:
 v-s:backwardProperty - mnd-s:hasACSRecord
 v-s:backwardTarget - [S]
 v-s:canRead - true
@@ -64,9 +109,10 @@ v-s:description - LastName + FirstName + MiddleName через " "
 rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE через " "
 v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
 mnd-s:winpakCardRecordId - BadgeID
+mnd-s:cardNumber - все значения CardNumber полученных объектов, прошедших проверку
 
 
-- если запрос на блокировку транспорта (ищем по ФИО+дата+компания) v-s:tag = "HumanWithCompany"
+- если запрос на блокировку человека (ищем по ФИО+дата+компания) v-s:tag = "HumanWithCompany"
 lastname = [S]["v-s:lastName"]
 firstname = [S]["v-s:firstName"]
 middlename = [S]["v-s:middleName"]
@@ -80,13 +126,57 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/{lastname}?$filt
     CustomBadgeFields/BADGE_COMPANY_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
     CustomBadgeFields/BADGE_BIRTHDATE = [S].["v-s:birthday"] (совпадает год рождения)
 
-Для каждого полученного держателя создать индивид класса mnd-s:ACSRecord (он же [R]) и в него вписать (то же что и для auto):
+По результату выполнения запроса держателей (get http://syk-vs149.mp.local:8734/pwapi/badges/key/....) перед созданием объектов mnd-s:ACSRecord выполняем запрос карт по каждому полученному держателю. Цель - исключить держателей, у которых нет карт или все карты не действительны
+Для этого выполняется запрос:
+get http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/cards 
+
+где BadgeID = значение BadgeID из ответа по держателям
+[
+    {
+        "BadgeID": "0x002943313746444333462D394438392D3435",
+        "LastName": "Лапшин",
+        "FirstName": "Александр",
+        "CustomBadgeFields": [
+        ...
+        ]
+    }
+]
+
+пример ответа по карте:
+[
+  {
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "56029",
+    "CardStatus": 0,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2021-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+  },
+  {
+    "BadgeID": "0x002943313746444333462D394438392D3435",
+    "CardNumber": "5327",
+    "CardStatus": 1,
+    "IssueDate": "2017-06-28T00:00:00",
+    "ExpireDate": "2020-12-02T00:00:00",
+    "CardNotes": "",
+    "LastChangeDate": "2020-11-16T12:06:32.8",
+  }
+]
+
+По результату ответа:
+    1) если у держателя нет карт, то объект mnd-s:ACSRecord не создается и переходим к следующему держателю
+    2) если карты есть, то из полученных объектов исключаем не действительные карты, где статус CardStatus=2 || 3 || 5 || 6
+    3) если в результате после исключения в (2) остаются карты, то для этого держателя создается объект mnd-s:ACSRecord со всеми ранее описанными полями и в дополнение заполняем mnd-s:cardNumber = все значения CardNumber полученных объектов карт, прошедших проверку
+
+Создать индивид класса mnd-s:ACSRecord (он же [R]), если условия выполнены и в него вписать (то же что и для auto):
 v-s:backwardProperty - mnd-s:hasACSRecord
 v-s:backwardTarget - [S]
 v-s:canRead - true
 v-s:description - LastName + FirstName + MiddleName через " "
 rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE
 mnd-s:winpakCardRecordId - BadgeID
+mnd-s:cardNumber - все значения CardNumber полученных объектов, прошедших проверку
 
 
 - внести изменения в текущую обработку объекта

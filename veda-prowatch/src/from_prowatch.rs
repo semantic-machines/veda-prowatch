@@ -7,8 +7,8 @@ use crate::common::{
 };
 use v_common::module::veda_backend::Backend;
 use v_common::onto::individual::Individual;
+use v_common::v_api::api_client::IndvOp;
 use v_common::v_api::obj::ResultCode;
-use v_common::v_api::api_client::{IndvOp};
 
 pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> ResultCode {
     src_indv.parse_all();
@@ -27,7 +27,7 @@ pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv
 
         src_indv.clear("mnd-s:hasACSRecord");
         for el in res_badge.1.unwrap_or_default() {
-            let mut acs_record = create_asc_record(&el, src_indv.get_id());
+            let mut acs_record = create_asc_record(&el, src_indv.get_id(), vec![]);
 
             if let Some(badge_id) = acs_record.get_first_literal("mnd-s:winpakCardRecordId") {
                 acs_record.clear("mnd-s:cardNumber");
