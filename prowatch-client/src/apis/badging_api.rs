@@ -35,8 +35,7 @@ pub trait BadgingApi {
     fn badges_put(&self, body: Value) -> Result<(), Error>;
     fn badges_assets(&self, body: &str) -> Result<(), Error>;
     fn badges_assets5(&self, body: &str) -> Result<(), Error>;
-    fn badges_badge_id(&self) -> Result<Vec<crate::models::Array>, Error>;
-    fn badges_badge_id7(&self) -> Result<(), Error>;
+    fn badges_badge_id(&self, badge_id: &str) -> Result<serde_json::Value, Error>;
     fn badges_badge_id_assets(&self) -> Result<Vec<crate::models::Array>, Error>;
     fn badges_badge_id_assets_asset_id_number(&self) -> Result<(), Error>;
     fn badges_badge_id_blob_type_id(&self) -> Result<(), Error>;
@@ -195,11 +194,11 @@ impl BadgingApi for BadgingApiClient {
         Ok(())
     }
 
-    fn badges_badge_id(&self) -> Result<Vec<crate::models::Array>, Error> {
+    fn badges_badge_id(&self, badge_id: &str) -> Result<serde_json::Value, Error> {
         let configuration: &configuration::Configuration = self.configuration.borrow();
         let client = &configuration.client;
 
-        let uri_str = format!("{}/pwapi/badges/0x002945383246374433392D333131432D3432/true", configuration.base_path);
+        let uri_str = format!("{}/pwapi/badges/{}", configuration.base_path, badge_id);
         let mut req_builder = client.get(uri_str.as_str());
 
         if let Some(ref user_agent) = configuration.user_agent {
@@ -213,27 +212,6 @@ impl BadgingApi for BadgingApiClient {
         let req = req_builder.build()?;
 
         Ok(client.execute(req)?.error_for_status()?.json()?)
-    }
-
-    fn badges_badge_id7(&self) -> Result<(), Error> {
-        let configuration: &configuration::Configuration = self.configuration.borrow();
-        let client = &configuration.client;
-
-        let uri_str = format!("{}/pwapi/badges/0x002930463142343039422D413542302D3439", configuration.base_path);
-        let mut req_builder = client.delete(uri_str.as_str());
-
-        if let Some(ref user_agent) = configuration.user_agent {
-            req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-        }
-        if let Some(ref auth_conf) = configuration.basic_auth {
-            req_builder = req_builder.basic_auth(auth_conf.0.to_owned(), auth_conf.1.to_owned());
-        };
-
-        // send request
-        let req = req_builder.build()?;
-
-        client.execute(req)?.error_for_status()?;
-        Ok(())
     }
 
     fn badges_badge_id_assets(&self) -> Result<Vec<crate::models::Array>, Error> {

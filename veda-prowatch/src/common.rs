@@ -119,10 +119,10 @@ pub fn clear_card_and_set_err(module: &mut Backend, sys_ticket: &str, indv: &mut
     match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
         Ok(_) => {
             info!("success update, uri={}", indv.get_id());
-        }
+        },
         Err(e) => {
             error!("fail update, uri={}, result_code={:?}", indv.get_id(), e.result);
-        }
+        },
     }
 }
 
@@ -134,10 +134,10 @@ pub fn set_err(module: &mut Backend, sys_ticket: &str, indv: &mut Individual, er
     match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
         Ok(_) => {
             info!("success update, uri={}", indv.get_id());
-        }
+        },
         Err(e) => {
             error!("fail update, uri={}, result_code={:?}", indv.get_id(), e.result);
-        }
+        },
     }
 }
 
@@ -207,14 +207,14 @@ pub fn concat_fields(fields: &[&str], els: Option<&Map<String, Value>>, delim: &
     }
     None
 }
-/*
+
 pub fn get_int_from_value(src_value: &Value, src_field: &str) -> Option<i64> {
     if let Some(v) = src_value.get(src_field) {
         return v.as_i64();
     }
     None
 }
-*/
+
 pub fn get_str_from_value<'a>(src_value: &'a Value, src_field: &str) -> Option<&'a str> {
     if let Some(v) = src_value.get(src_field) {
         return v.as_str();
@@ -453,7 +453,14 @@ pub fn access_levels_to_json_for_new(access_levels: HashSet<String>) -> Vec<Valu
 
 pub fn get_custom_badge_as_list(el: &Value) -> Map<String, Value> {
     let mut fields: Map<String, Value> = Map::default();
-    if let Some(v) = el.get("CustomBadgeFields") {
+
+    let nn = if let Some(v) = el.as_array() {
+        v.get(0).unwrap_or(el)
+    } else {
+        el
+    };
+
+    if let Some(v) = nn.get("CustomBadgeFields") {
         if let Some(ar) = v.as_array() {
             for c_el in ar {
                 let mut field_type = 0;
@@ -541,6 +548,18 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
         }
     }
 
+    if let Some(v) = fields.get("BADGE_NOTE_UPB") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("mnd-s:commentUPB", &s, Lang::NONE);
+        }
+    }
+
+    if let Some(v) = fields.get("BADGE_NOTE2") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("mnd-s:commentES", &s, Lang::NONE);
+        }
+    }
+
     if let Some(v) = fields.get("BADGE_ID") {
         if let Some(s) = v.as_str() {
             dest.set_string("v-s:tabNumber", &s, Lang::NONE);
@@ -612,10 +631,10 @@ pub fn set_update_status(
     match module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
         Ok(_) => {
             info!("success update, uri={}", indv.get_id());
-        }
+        },
         Err(e) => {
             error!("fail update, uri={}, result_code={:?}", indv.get_id(), e.result);
-        }
+        },
     }
     ResultCode::Ok
 }
@@ -665,14 +684,19 @@ pub(crate) fn veda_photo_to_pw(module: &mut Backend, ctx: &mut Context, badge_id
         let src_full_path =
             "data/files".to_owned() + &file.get_first_literal("v-s:filePath").unwrap_or_default() + "/" + &file.get_first_literal("v-s:fileUri").unwrap_or_default();
 
-        if let Ok(f) = fs::read(src_full_path) {
-            let msg_base64 = encode(f);
+        match fs::read(src_full_path) {
+            Ok(f) => {
+                let msg_base64 = encode(f);
 
-            if let Err(e) = ctx.pw_api_client.badging_api().badges_badge_id_photo_post(&badge_id, msg_base64) {
-                error!("to PW: update_photo: badges_put: err={:?}", e);
-            } else {
-                info!("to PW: update photo, {}", src.get_id())
-            }
+                if let Err(e) = ctx.pw_api_client.badging_api().badges_badge_id_photo_post(&badge_id, msg_base64) {
+                    error!("to PW: update_photo: badges_put: err={:?}", e);
+                } else {
+                    info!("to PW: update photo, {}", src.get_id())
+                }
+            },
+            Err(e) => {
+                error!("fail send photo to prowatch, err={:?}", e);
+            },
         }
     }
 }
@@ -700,10 +724,10 @@ pub(crate) fn pw_photo_to_veda(module: &mut Backend, ctx: &mut Context, badge_id
                     } else {
                         info!("success create file {}", full_file_path);
                     }
-                }
+                },
                 Err(e) => {
                     error!("fail create file {}, {:?}", full_file_path, e);
-                }
+                },
             }
 
             indv_file.set_uri("rdf:type", "v-s:File");
@@ -953,11 +977,32 @@ pub fn send_message_of_status_lock_unlock(ctx: &mut Context, backend: &mut Backe
     match backend.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, &message) {
         Ok(_) => {
             info!("success update, uri={}", message.get_id());
-        }
+        },
         Err(e) => {
             error!("fail update, uri={}, result_code={:?}", message.get_id(), e.result);
-        }
+        },
     }
 
     Ok(())
+}
+
+pub fn get_badge_id_of_card_number(ctx: &mut Context, card_number: &str) -> Result<String, ResultCode> {
+    let res_card = ctx.pw_api_client.badging_api().badges_cards_card(card_number);
+    if let Err(e) = res_card {
+        error!("badges_cards_card: err={:?}", e);
+        return match e {
+            Error::Reqwest(_) => Err(ResultCode::UnprocessableEntity),
+            Error::Serde(_) => Err(ResultCode::UnprocessableEntity),
+            Error::Io(_) => Err(ResultCode::ConnectError),
+        };
+    }
+
+    let card = res_card.unwrap();
+    if !card.is_object() {
+        return Err(ResultCode::UnprocessableEntity);
+    }
+    if let Some(s) = get_str_from_value(&card, "BadgeID") {
+        return Ok(s.to_owned());
+    }
+    Err(ResultCode::UnprocessableEntity)
 }

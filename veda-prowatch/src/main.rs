@@ -6,7 +6,7 @@ mod from_prowatch;
 mod lock;
 mod to_prowatch;
 
-use crate::common::{load_access_level_dir, set_update_status, Context, PassType};
+use crate::common::{clear_card_and_set_err, load_access_level_dir, set_update_status, Context, PassType};
 use crate::from_prowatch::sync_data_from_prowatch;
 use crate::lock::{lock_holder, lock_unlock_card};
 use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, update_prowatch_data};
@@ -21,7 +21,7 @@ use v_common::module::module::{get_cmd, get_info_of_module, get_inner_binobj_as_
 use v_common::module::veda_backend::Backend;
 use v_common::onto::individual::Individual;
 use v_common::onto::onto::Onto;
-use v_common::storage::storage::StorageMode;
+use v_common::storage::common::StorageMode;
 use v_common::v_api::api_client::IndvOp;
 use v_common::v_api::obj::ResultCode;
 use v_queue::consumer::Consumer;
@@ -148,13 +148,16 @@ fn prepare_queue_element(backend: &mut Backend, ctx: &mut Context, queue_element
 
     for itype in itypes {
         if itype == "mnd-s:SourceDataRequestForPass" {
-            let _res = sync_data_from_prowatch(backend, ctx, &mut new_state_indv);
+            if let Err((res, err_text)) = sync_data_from_prowatch(backend, ctx, &mut new_state_indv) {
+                clear_card_and_set_err(backend, &ctx.sys_ticket, &mut new_state_indv, &err_text);
+                return Err(res);
+            }
         } else if itype == "mnd-s:SourceDataRequestForPassByNames" {
             // ПРОВЕРКА НАЛИЧИЯ ДЕРЖАТЕЛЕЙ В СКУД
             if let Some(tag) = new_state_indv.get_first_literal("v-s:tag") {
                 if tag == "Auto" || tag == "Human" {
-                    let res = sync_data_from_prowatch(backend, ctx, &mut new_state_indv);
-                    if res == ResultCode::ConnectError {
+                    if let Err((res, err_text)) = sync_data_from_prowatch(backend, ctx, &mut new_state_indv) {
+                        clear_card_and_set_err(backend, &ctx.sys_ticket, &mut new_state_indv, &err_text);
                         return Err(res);
                     }
                 } else {

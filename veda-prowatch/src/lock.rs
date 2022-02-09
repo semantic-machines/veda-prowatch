@@ -1,8 +1,9 @@
 use crate::common::{
-    create_asc_record, get_badge_use_request_indv, get_custom_badge_as_list, get_individual_from_predicate, get_now_00_00_00, get_str_from_value,
-    i64_to_str_date_ymdthms, send_message_of_status_lock_unlock, set_card_status, str_date_to_i64, Context, PassType,
+    create_asc_record, get_badge_use_request_indv, get_custom_badge_as_list, get_individual_from_predicate, get_int_from_value, get_now_00_00_00, get_str_from_value,
+    i64_to_str_date, i64_to_str_date_ymdthms, send_message_of_status_lock_unlock, set_card_status, str_date_to_i64, Context, PassType,
 };
 use prowatch_client::apis::Error;
+use serde_json::json;
 use v_common::module::veda_backend::Backend;
 use v_common::onto::individual::Individual;
 use v_common::v_api::api_client::IndvOp;
@@ -59,7 +60,7 @@ pub fn lock_holder(module: &mut Backend, ctx: &mut Context, pass_type: PassType,
                                 info!("@ status={:?}", status);
                                 if !(status == 2 || status == 3 || status == 5 || status == 6) {
                                     if let Some(s) = card.get("CardNumber") {
-                                        info!("@ [CardNumber]={:?}",s);
+                                        info!("@ [CardNumber]={:?}", s);
                                         valid_cards.push(s.as_str().unwrap_or_default().to_owned());
                                     }
                                 }
@@ -82,18 +83,17 @@ pub fn lock_holder(module: &mut Backend, ctx: &mut Context, pass_type: PassType,
         }
     }
 
-        if asc_indvs.is_empty() {
-            return Err((ResultCode::Ok, "Держатель не найден".to_owned()));
-        }
+    if asc_indvs.is_empty() {
+        return Err((ResultCode::Ok, "Держатель не найден".to_owned()));
+    }
 
-        for el in asc_indvs.iter_mut() {
-            if module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el).is_ok() {
-                info!("success update, uri={}", el.get_id());
-            } else {
-                return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", el.get_id())));
-            }
+    for el in asc_indvs.iter_mut() {
+        if module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el).is_ok() {
+            info!("success update, uri={}", el.get_id());
+        } else {
+            return Err((ResultCode::DatabaseModifiedError, format!("fail update, uri={}", el.get_id())));
         }
-
+    }
 
     Ok(())
 }
@@ -109,15 +109,83 @@ pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut I
             if let Some(indv_p_id) = indv_x.get_first_literal("v-s:backwardTarget") {
                 if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
                     for el in ctx.pw_api_client.badging_api().badges_badge_id_cards(&badge_id).unwrap_or_default() {
+                        warn!("@el={:?}", el);
+                        let badge_id = get_str_from_value(&el, "BadgeID").unwrap_or_default();
+
                         if let Some(card_number) = get_str_from_value(&el, "CardNumber") {
                             if need_lock {
-                                set_card_status(ctx, card_number, 1)?;
-                                count_prepared_card += 1;
+                                if let Some(card_status) = get_int_from_value(&el, "CardStatus") {
+                                    if card_status == 0 {
+                                        set_card_status(ctx, card_number, 8)?;
+                                        // для каждой полученной карты дописываем причину блокировки в держателя в примечание
+
+                                        backend.get_individual(&indv_p_id, &mut indv_p).unwrap_or(&mut Individual::default());
+
+                                        let reason_uri = indv_p.get_first_literal("v-s:hasLockedReason").unwrap_or_default();
+
+                                        let mut comment_js = Default::default();
+
+                                        if reason_uri == "d:c820270f5f424107a5c54bfeeebfa095" {
+                                            // блокировка по аудиту
+                                            //audit_number = [P]["v-s:backwardTarget"]["v-s:registrationNumber"] для первого значения v-s:backwardTarget
+                                            let audit_number = if let Ok(mut indv_a) = get_individual_from_predicate(backend, &mut indv_p, "v-s:backwardTarget") {
+                                                indv_a.get_first_literal("v-s:registrationNumber").unwrap_or_default()
+                                            } else {
+                                                "".to_owned()
+                                            };
+
+                                            //datefrom = [P]["v-s:dateFrom"] в формате dd.mm.yyyy
+                                            let date_from = indv_p.get_first_datetime("v-s:dateFrom");
+
+                                            //dateTo = [P]["v-s:dateTo"] в формате dd.mm.yyyy
+                                            let date_to = indv_p.get_first_datetime("v-s:dateTo");
+
+                                            let comment = format!(
+                                                "Аудит № {} с {} по {}",
+                                                &audit_number,
+                                                &i64_to_str_date(date_from, "%d.%m.%Y"),
+                                                &i64_to_str_date(date_to, "%d.%m.%Y")
+                                            );
+
+                                            comment_js = json!({ "BadgeID": badge_id, "CustomBadgeFields": [{
+                                            "ColumnName": "BADGE_NOTE_UPB",
+                                            "TextValue": comment
+                                            }
+                                        ] });
+                                        } else if reason_uri == "d:a0aoowjbm91ef2lw57c8lo29772" {
+                                            // истек срок действия досье
+                                            let comment = format!("{}", "Досье не актуально");
+
+                                            comment_js = json!({ "BadgeID": badge_id, "CustomBadgeFields": [{
+                                            "ColumnName": "BADGE_NOTE_UPB2",
+                                            "TextValue": comment
+                                            }
+                                        ] });
+                                        }
+
+                                        if let Err(e) = ctx.pw_api_client.badging_api().badges_put(comment_js) {
+                                            error!("badges_put: err={:?}", e);
+                                        }
+
+                                        count_prepared_card += 1;
+                                    }
+                                }
                             } else {
                                 let s_expire_date = get_str_from_value(&el, "ExpireDate").unwrap_or_default();
                                 if let Some(expire_date) = str_date_to_i64(s_expire_date, None) {
                                     if expire_date > get_now_00_00_00().timestamp() {
                                         set_card_status(ctx, card_number, 0)?;
+
+                                        let comment_js = json!({ "BadgeID": badge_id, "CustomBadgeFields": [{
+                                            "ColumnName": "BADGE_NOTE_UPB2",
+                                            "TextValue": ""
+                                            }
+                                        ] });
+
+                                        if let Err(e) = ctx.pw_api_client.badging_api().badges_put(comment_js) {
+                                            error!("badges_put: err={:?}", e);
+                                        }
+
                                         count_prepared_card += 1;
                                     }
                                 } else {
@@ -127,6 +195,7 @@ pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut I
                         }
                     }
 
+                    indv_p = Individual::default();
                     if let Some(mut upd_indv) = backend.get_individual(&indv_p_id, &mut indv_p) {
                         upd_indv.parse_all();
                         upd_indv.remove("v-s:hasStatus");

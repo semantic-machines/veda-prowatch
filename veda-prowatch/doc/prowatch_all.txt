@@ -6,6 +6,73 @@
 При сохранении идивида класса mnd-s:SourceDataRequestForPass модуль обращается к PW и выполняет запрос данных по карте и сотруднику
 cardnumber = [S]["mnd-s:cardNumber"]
 
+данные сотрудника:
+get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/badge/
+
+пример ответа:
+[
+    {
+        "BadgeID": "0x002943313746444333462D394438392D3435",
+        "LastName": "Лапшин",
+        "FirstName": "Александр",
+        "MiddleName": "Васильевич",
+        "IssueDate": "2017-06-28T00:00:00",
+        "CustomBadgeFields": [
+            {
+                "ColumnName": "BADGE_SAFETY_INST_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
+                "FieldType": 2,
+                "TextValue": "18.12.2018"
+            },
+            {
+                "ColumnName": "BADGE_BIRTHDATE",
+                "DateValue": "1990-01-07T00:00:00"
+            },
+            {
+                "ColumnName": "BADGE_TITLE",
+                "FieldType": 2,
+                "TextValue": "специалист"
+            },
+            {
+                "ColumnName": "BADGE_CLEARANCE_ORDER_SOURCE",
+                "FieldType": 2,
+                "TextValue": "Ратнев"
+            },
+            {
+                "ColumnName": "BADGE_STATE_NAME",
+                "FieldType": 2,
+                "TextValue": "временно"
+            },
+            {
+                "ColumnName": "BADGE_COMPANY_ID",
+                "FieldType": 2,
+                "TextValue": "123"
+            }
+        ]
+    }
+]
+
+Перед дальнейшими действиями требуется проверить соответствие организации сотрудника указанной в PW и пользователя создающего запрос:
+    [инн_организации_в_PW] = CustomBadgeFields.BADGE_COMPANY_ID (параметр из CustomBadgeFields запроса держателя)
+    [инн_пользователя] = [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:taxId"] + [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:hasContractorProfileSafety"]["mnd-s:subContractor"]["v-s:taxId"] ("mnd-s:subContractor" множественное)
+Если в перечне значений [инн_пользователя] нет [инн_организации_в_PW], то запрос отклоняется с v-s:errorMessage = "Информация о пропуске недоступна"
+
+Вписать в [S]:
+v-s:description - LastName + FirstName + MiddleName через " "
+rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE
+v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
+v-s:tabNumber - CustomBadgeFields.BADGE_ID
+mnd-s:briefingDate - CustomBadgeFields.BADGE_SAFETY_INST_DATE
+mnd-s:passEquipment - CustomBadgeFields.BADGE_TOOL01 + .... + CustomBadgeFields.BADGE_TOOL11 через разделитель '\n'
+mnd-s:winpakCardRecordId - BadgeID
+v-s:lastName - LastName
+v-s:firstName - FirstName
+v-s:middleName - MiddleName
+
 данные карты:
 get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
 
@@ -53,79 +120,38 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
 }
 
 Вписать в [S]:
+mnd-s:cardStatus (текст) = на основе поля CardStatus заполнить статус:
+            0 - "Активна"
+            1 - "Отключена"
+            2 - "Утеряна"
+            3 - "Украдена"
+            4 - "Сдана"
+            5 - "Неучтенная"
+            6 - "Аннулированная"
+            7 - "Истек срок действия"
+            8 - "Авто откл."
 v-s:dateFrom (дата) = IssueDate
 v-s:dateTo (дата) = ExpireDate
 mnd-s:hasAccessLevel = выполнить поиск уровней доступа, в которых v-s:registrationNumberAdd соответствует значениям ClearCodeID в ClearanceCodes.ClearCode
 ( 'rdf:type'=='mnd-s:AccessLevel' ) && ( 'v-s:registrationNumberAdd'=='+ClearCodeID*' || 'v-s:registrationNumberAdd'=='+ClearCodeID*' )
 
 
-данные сотрудника:
-get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/badge/
-
-пример ответа:
-[
-    {
-        "BadgeID": "0x002943313746444333462D394438392D3435",
-        "LastName": "Лапшин",
-        "FirstName": "Александр",
-        "MiddleName": "Васильевич",
-        "IssueDate": "2017-06-28T00:00:00",
-        "CustomBadgeFields": [
-            {
-                "ColumnName": "BADGE_SAFETY_INST_DATE",
-                "FieldType": 2,
-                "TextValue": "18.12.2018"
-            },
-            {
-                "ColumnName": "BADGE_CLEARANCE_ORDER_DATE",
-                "FieldType": 2,
-                "TextValue": "18.12.2018"
-            },
-            {
-                "ColumnName": "BADGE_BIRTHDATE",
-                "DateValue": "1990-01-07T00:00:00"
-            },
-            {
-                "ColumnName": "BADGE_TITLE",
-                "FieldType": 2,
-                "TextValue": "специалист"
-            },
-            {
-                "ColumnName": "BADGE_CLEARANCE_ORDER_SOURCE",
-                "FieldType": 2,
-                "TextValue": "Ратнев"
-            },
-            {
-                "ColumnName": "BADGE_STATE_NAME",
-                "FieldType": 2,
-                "TextValue": "временно"
-            }
-        ]
-    }
-]
-
-Вписать в [S]:
-v-s:description - LastName + FirstName + MiddleName через " "
-rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE
-v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
-v-s:tabNumber - CustomBadgeFields.BADGE_ID
-mnd-s:briefingDate - CustomBadgeFields.BADGE_SAFETY_INST_DATE
-mnd-s:passEquipment - CustomBadgeFields.BADGE_TOOL01 + .... + CustomBadgeFields.BADGE_TOOL11 через разделитель '\n'
-mnd-s:winpakCardRecordId - BadgeID
-v-s:lastName - LastName
-v-s:firstName - FirstName
-v-s:middleName - MiddleName
-
 Если на любом из запросов ошибка, то очищаем все заполняемые выше поля выводим текст ошибки в v-s:errorMessage
 
-
+#-----------------------------------------------------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------------------------
 
-Изменение данных по карте
+ИЗМЕНЕНИЕ ДАННЫХ ПО КАРТЕ
 При сохранении индивида класса v-s:ExternalModuleHandler, если v-s:moduleLabel = "winpak pe44 update" , то выполянется обновление данных по карте
 [E] - объект v-s:ExternalModuleHandler
 [С] - заполненное пользователем изменение к пропуску [E]["v-s:backwardTarget"]
 
+Для п.2-8 перед обновлением данных выполнить сравнение держателей карт указанного в ОФ и в PW:
+- выполняем запрос get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
+- сравниваем значения полей BadgeID из ответа PW с [S].["mnd-s:winpakCardRecordId"] из ОФ 
+- если значения совпадают, то продолжаем выполнение
+- если не совпадают, то прекращаем выполнение указываем в  [E].["v-s:hasStatus"]=v-s:StatusRejected и в [E].["v-s:errorMessage"]="Держатель карты не соответствует данным в PW"
 
 2. ПРОДЛИТЬ СРОК ДЕЙСТВИЯ КАРТЫ
 
@@ -515,11 +541,14 @@ v-s:description - LastName + FirstName + MiddleName через " "
 rdfs:comment - CustomBadgeFields.BADGE_COMPANY_NAME + CustomBadgeFields.BADGE_DEPARTMENT + CustomBadgeFields.BADGE_TITLE через " "
 v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
 mnd-s:winpakCardRecordId - BadgeID
+#новое
+mnd-s:commentUPB - CustomBadgeFields.BADGE_NOTE_UPB
+mnd-s:commentES - CustomBadgeFields.BADGE_NOTE2
 
 
 
 #не актуально - если пропуск на человека mnd-s:hasPassKind = d:ece7e741557e406bb996809163810c6e || d:a149d268628b46ae8d40c6ea0ac7f3dd || d:228e15d5afe544c099c337ceafa47ea || d:ih7mpbsuu6xxmy7ouqlyhfqyua
-- если пропуск на ТС v-s:tag = Human
+- если пропуск на человека v-s:tag = Human
 lastname = [S]["v-s:lastName"]
 firstname = [S]["v-s:firstName"]
 middlename = [S]["v-s:middleName"]

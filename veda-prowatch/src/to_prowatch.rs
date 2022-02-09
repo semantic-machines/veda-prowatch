@@ -96,7 +96,7 @@ pub fn insert_to_prowatch(module: &mut Backend, ctx: &mut Context, indv: &mut In
         Err(e) => {
             error!("not found [v-s:backwardTarget] in {}", indv.get_id());
             return Err((ResultCode::FailStore, format!("add {:?} data: badges_put: err={:?}", pass_type, e)));
-        }
+        },
         Ok(r) => {
             if let Some(o) = r.as_object() {
                 if let Some(id) = o.get("BadgeID") {
@@ -106,7 +106,7 @@ pub fn insert_to_prowatch(module: &mut Backend, ctx: &mut Context, indv: &mut In
                     }
                 }
             }
-        }
+        },
     }
 
     if new_badge_id.is_none() {
@@ -148,6 +148,14 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
             return Err((ResultCode::NotFound, "исходные данные некорректны".to_owned()));
         }
         let badge_id = wbadge_id.unwrap();
+
+        if let Ok(pw_badge_id) = get_badge_id_of_card_number(ctx, &card_number) {
+            if badge_id != pw_badge_id {
+                return Err((ResultCode::UnprocessableEntity, "Держатель карты не соответствует данным в PW".to_owned()));
+            }
+        } else {
+            return Err((ResultCode::UnprocessableEntity, "Не удалось сравнить держателья карты с данными из PW".to_owned()));
+        }
 
         let mut is_update_access_levels = false;
         let mut is_tmp_update_access_levels = false;
@@ -408,26 +416,26 @@ fn add_card_with_access_to_pw(module: &mut Backend, ctx: &mut Context, badge_id:
     Ok(())
 }
 
-fn update_asc_record(module: &mut Backend, ctx: &mut Context, indv_r: &mut Individual, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
+fn update_asc_record(backend: &mut Backend, ctx: &mut Context, indv_r: &mut Individual, indv_e: &mut Individual) -> Result<(), (ResultCode, String)> {
     if let Some(badge_id) = indv_r.get_first_literal("mnd-s:winpakCardRecordId") {
-        let mut indv_s = get_individual_from_predicate(module, indv_r, "v-s:backwardTarget")?;
-        let mut indv_p = get_individual_from_predicate(module, &mut indv_s, "v-s:backwardTarget")?;
-        if let Err(e) = add_card_with_access_to_pw(module, ctx, &badge_id, &mut indv_p) {
+        let mut indv_s = get_individual_from_predicate(backend, indv_r, "v-s:backwardTarget")?;
+        let mut indv_p = get_individual_from_predicate(backend, &mut indv_s, "v-s:backwardTarget")?;
+        if let Err(e) = add_card_with_access_to_pw(backend, ctx, &badge_id, &mut indv_p) {
             error!("update_prowatch_data::add_card_with_access_to_pw, error={:?}", e);
         }
 
         let mut custom_fields = vec![];
         equipment_to_field_list(&mut custom_fields, &mut indv_p);
 
-        let kpp_numbers = set_str_from_field_field(module, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
+        let kpp_numbers = set_str_from_field_field(backend, &mut indv_p, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
         if !kpp_numbers.is_empty() {
             add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
         }
 
         if let Some(cp_id) = indv_p.get_first_literal("v-s:correspondentPerson") {
             let mut icp = Individual::default();
-            if module.get_individual(&cp_id, &mut icp).is_some() {
-                add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(module, &mut icp, "v-s:occupation", "rdfs:label"));
+            if backend.get_individual(&cp_id, &mut icp).is_some() {
+                add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(backend, &mut icp, "v-s:occupation", "rdfs:label"));
             } else {
                 error!("add human, invalid link v-s:correspondentPerson = {}", cp_id);
                 return Err((ResultCode::BadRequest, format!("add human, invalid link v-s:correspondentPerson = {}", cp_id)));

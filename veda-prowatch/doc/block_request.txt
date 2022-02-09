@@ -237,17 +237,47 @@ get https://syk-vs155.mp.local:8734/pwapi/badges/{BadgeID}}/cards
         "BioSelectedCard": false
     }
 ]
-вытаскиваем все значения CardNumber для обработки
+вытаскиваем все значения CardNumber для обработки, где CardStatus=0
 
 - для каждой полученной карты выполняем запрос на выключение
 
 cardnumber = номера карт полученные на предыдущем этапе
-put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+put http://syk-vs155.mp.local:8734/pwapi/badges/cards
 
 {
     "CardNumber": "cardnumber",
-    "CardStatus": 1,
+    "CardStatus": 8,
 }
+
+- для каждой полученной карты дописываем причину блокировки в держателя в примечание
+put http://syk-vs155.mp.local:8734/pwapi/badges
+    
+	- если в запросе на блокироку [P]["v-s:hasLockedReason"] = d:c820270f5f424107a5c54bfeeebfa095 (блокировка по аудиту)
+	        COMMENT = "Аудит №" + audit_number "; с- по: " + datefrom + "-" +dateTo
+	        	audit_number = [P]["v-s:backwardTarget"]["v-s:registrationNumber"] для первого значения v-s:backwardTarget
+		        datefrom = [P]["v-s:dateFrom"] в формате dd.mm.yyyy
+		        dateTo = [P]["v-s:dateTo"] в формате dd.mm.yyyy
+    	{
+    	"BadgeID": "BadgeID", 
+	    "CustomBadgeFields": [
+        	{
+	            "ColumnName": "BADGE_NOTE_UPB",
+	            "TextValue": " COMMENT "
+	        }
+	    ]
+	}
+        	
+	- если в запросе на блокировку [P]["v-s:hasLockedReason"] = d:a0aoowjbm91ef2lw57c8lo29772 (истек срок действия досье)
+	        COMMENT = "Досье не актуально"      
+	{
+    	"BadgeID": "BadgeID", 
+	    "CustomBadgeFields": [
+        	{
+	            "ColumnName": "BADGE_NOTE_UPB2",
+	            "TextValue": " COMMENT "
+	        }
+	    ]
+	}
 
 Если ошибка на любом из этапов, то вписываем стандартный статус "отклонено" и текст ошибки.
 Если все выполнено успешно, то вписываем статус "принято" и дополняем v-s:backwardTarget = индивид запроса на блокировку [P] (не заменить, а добавить к существующему)
@@ -317,6 +347,19 @@ put http://syk-vs149.mp.local:8734/pwapi/badges/cards
     "CardNumber": "cardnumber",
     "CardStatus": 0,
 }
+
+- очищаем поле комментарий о не актуальном досье из держателя
+put http://syk-vs155.mp.local:8734/pwapi/badges
+	{
+    	"BadgeID": "BadgeID", 
+	    "CustomBadgeFields": [
+        	{
+	            "ColumnName": "BADGE_NOTE_UPB2",
+	            "TextValue": ""
+	        }
+	    ]
+	}
+
 
 Если ошибка на любом из этапов, то вписываем стандартный статус "отклонено" и текст ошибки.
 Если все выполнено успешно, то вписываем статус "принято" и дополняем v-s:backwardTarget = индивид запроса на блокировку [P] (не заменить, а добавить к существующему)

@@ -1,27 +1,25 @@
+use crate::common::{
+    create_asc_record, get_badge_use_request_indv, get_custom_badge_as_list, get_individual_from_predicate, get_int_from_value, get_str_from_value, pw_photo_to_veda,
+    set_badge_to_indv, str_value2indv, Context, CARD_NUMBER_FIELD_NAME,
+};
 use prowatch_client::apis::Error;
 use serde_json::Value;
-
-use crate::common::{
-    clear_card_and_set_err, create_asc_record, get_badge_use_request_indv, get_str_from_value, pw_photo_to_veda, set_badge_to_indv, str_value2indv, Context,
-    CARD_NUMBER_FIELD_NAME,
-};
 use v_common::module::veda_backend::Backend;
+use v_common::onto::datatype::Lang;
 use v_common::onto::individual::Individual;
 use v_common::v_api::api_client::IndvOp;
 use v_common::v_api::obj::ResultCode;
 
-pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> ResultCode {
+pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     src_indv.parse_all();
     let mut asc_indvs = vec![];
 
     if src_indv.get_first_literal("mnd-s:hasPassKind").is_some() {
-        let res_badge = get_badge_use_request_indv(module, ctx, None, src_indv);
+        let res_badge = get_badge_use_request_indv(backend, ctx, None, src_indv);
         if let Err(e) = res_badge.1 {
-            error!("badges: err={:?}", e);
-            clear_card_and_set_err(module, &ctx.sys_ticket, src_indv, "Карта не найдена");
             return match e {
-                Error::Io(_) => ResultCode::ConnectError,
-                _ => ResultCode::UnprocessableEntity,
+                Error::Io(_) => Err((ResultCode::ConnectError, "Карта не найдена".to_owned())),
+                _ => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
             };
         }
 
@@ -35,7 +33,7 @@ pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv
                     str_value2indv(&el1, "CardNumber", &mut acs_record, "mnd-s:cardNumber");
                 }
 
-                pw_photo_to_veda(module, ctx, &badge_id, &mut acs_record);
+                pw_photo_to_veda(backend, ctx, &badge_id, &mut acs_record);
             }
 
             asc_indvs.push(acs_record);
@@ -44,72 +42,83 @@ pub fn sync_data_from_prowatch(module: &mut Backend, ctx: &mut Context, src_indv
         let card_number = src_indv.get_first_literal(CARD_NUMBER_FIELD_NAME).unwrap_or(String::default());
         if card_number.is_empty() {
             error!("fail read {}.{}", CARD_NUMBER_FIELD_NAME, src_indv.get_id());
-            return ResultCode::UnprocessableEntity;
+            return Err((ResultCode::UnprocessableEntity, "".to_owned()));
         }
 
         let res_card = ctx.pw_api_client.badging_api().badges_cards_card(&card_number);
         if let Err(e) = res_card {
             error!("badges_cards_card: err={:?}", e);
-            clear_card_and_set_err(module, &ctx.sys_ticket, src_indv, "Карта не найдена");
             return match e {
-                Error::Reqwest(_) => ResultCode::UnprocessableEntity,
-                Error::Serde(_) => ResultCode::UnprocessableEntity,
-                Error::Io(_) => ResultCode::ConnectError,
+                Error::Reqwest(_) => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
+                Error::Serde(_) => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
+                Error::Io(_) => Err((ResultCode::ConnectError, "Карта не найдена".to_owned())),
             };
         }
 
         let res_badge = ctx.pw_api_client.badging_api().badges_cards(&card_number);
         if let Err(e) = res_badge {
             error!("badges_cards: err={:?}", e);
-            clear_card_and_set_err(module, &ctx.sys_ticket, src_indv, "Карта не найдена");
             return match e {
-                Error::Io(_) => ResultCode::ConnectError,
-                _ => ResultCode::UnprocessableEntity,
+                Error::Io(_) => Err((ResultCode::ConnectError, "Карта не найдена".to_owned())),
+                _ => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
             };
         }
+        let res_badge = res_badge.unwrap_or_default();
 
         let card = res_card.unwrap();
         if !card.is_object() {
-            return ResultCode::Ok;
+            return Ok(());
         }
         if let Some(s) = get_str_from_value(&card, "CardNumber") {
             if s != card_number {
                 error!("fail read {}.{}, request card number not equal response", CARD_NUMBER_FIELD_NAME, src_indv.get_id());
-                return ResultCode::UnprocessableEntity;
+                return Err((ResultCode::UnprocessableEntity, "".to_owned()));
             }
         }
 
+        /*
+        Перед дальнейшими действиями требуется проверить соответствие организации сотрудника указанной в PW и пользователя создающего запрос:
+        [инн_организации_в_PW] = CustomBadgeFields.BADGE_COMPANY_ID (параметр из CustomBadgeFields запроса держателя)
+        [инн_пользователя] = [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:taxId"] + [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:hasContractorProfileSafety"]["mnd-s:subContractor"]["v-s:taxId"] ("mnd-s:subContractor" множественное)
+        Если в перечне значений [инн_пользователя] нет [инн_организации_в_PW], то запрос отклоняется с v-s:errorMessage = "Информация о пропуске недоступна"
+        */
+
+        if let Some(badge) = res_badge.get(0) {
+            if !check_company(&badge, backend, src_indv) {
+                return Err((ResultCode::UnprocessableEntity, "Информация о пропуске недоступна".to_owned()));
+            }
+        }
         set_card_to_indv(card, src_indv, ctx);
-        if let Some(badge) = res_badge.unwrap_or_default().get(0) {
+        if let Some(badge) = res_badge.get(0) {
             set_badge_to_indv(badge, src_indv);
         }
     }
 
     src_indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
-    match module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, src_indv) {
+    match backend.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, src_indv) {
         Ok(_) => {
-            info!("success update, uri={}", src_indv.get_id());
-        }
+            info!("success update 0, uri={}", src_indv.get_id());
+        },
         Err(e) => {
             error!("fail update, uri={}, result_code={:?}", src_indv.get_id(), e.result);
-            return ResultCode::DatabaseModifiedError;
-        }
+            return Err((ResultCode::DatabaseModifiedError, "".to_owned()));
+        },
     }
 
     for el in asc_indvs.iter_mut() {
-        match module.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el) {
+        match backend.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, el) {
             Ok(_) => {
-                info!("success update, uri={}", src_indv.get_id());
-            }
+                info!("success update 1, uri={}", src_indv.get_id());
+            },
             Err(e) => {
                 error!("fail update, uri={}, result_code={:?}", src_indv.get_id(), e.result);
-                return ResultCode::DatabaseModifiedError;
-            }
+                return Err((ResultCode::DatabaseModifiedError, "".to_owned()));
+            },
         }
     }
 
-    return ResultCode::Ok;
+    return Ok(());
 }
 
 fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
@@ -121,6 +130,35 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
         } else {
             indv.add_datetime_from_str("v-s:dateFrom", sd);
         }
+    }
+
+    if let Some(n) = get_int_from_value(&card, "CardStatus") {
+        /*
+        Вписать в [S]:
+        mnd-s:cardStatus (текст) = на основе поля CardStatus заполнить статус:
+            0 - "Активна"
+            1 - "Отключена"
+            2 - "Утеряна"
+            3 - "Украдена"
+            4 - "Сдана"
+            5 - "Неучтенная"
+            6 - "Аннулированная"
+            7 - "Истек срок действия"
+            8 - "Авто откл."
+         */
+        let s = match n {
+            0 => "Активна",
+            1 => "Отключена",
+            2 => "Утеряна",
+            3 => "Украдена",
+            4 => "Сдана",
+            5 => "Неучтенная",
+            6 => "Аннулированная",
+            7 => "Истек срок действия",
+            8 => "Авто откл.",
+            _ => "?",
+        };
+        indv.set_string("mnd-s:cardStatus", s, Lang::RU);
     }
 
     if let Some(d) = card.get("ExpireDate") {
@@ -143,4 +181,44 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
             }
         }
     }
+}
+
+fn check_company(card: &Value, backend: &mut Backend, src_indv: &mut Individual) -> bool {
+    info!("$1 card={:?}", card);
+    if let Some(v) = get_custom_badge_as_list(&card).get("BADGE_COMPANY_ID") {
+        info!("$2 v={:?}", v);
+        if let Some(company_id) = v.as_str() {
+            info!("$3");
+            if let Ok(mut indv1) = get_individual_from_predicate(backend, src_indv, "v-s:creator") {
+                info!("$4");
+                if let Ok(mut indv2) = get_individual_from_predicate(backend, &mut indv1, "v-s:parentOrganization") {
+                    info!("$5");
+                    if indv2.get_first_literal("v-s:taxId").unwrap_or_default() == company_id {
+                        return true;
+                    }
+
+                    info!("$6");
+                    if let Ok(mut indv3) = get_individual_from_predicate(backend, &mut indv2, "v-s:hasContractorProfileSafety") {
+                        info!("$7");
+                        if let Some(indv4uris) = indv3.get_literals("mnd-s:subContractor") {
+                            info!("$8");
+                            for id in indv4uris {
+                                info!("$9");
+                                if let Some(mut indv5) = backend.get_individual_s(&id) {
+                                    info!("$10");
+                                    if indv5.get_first_literal("v-s:taxId").unwrap_or_default() == company_id {
+                                        info!("$11");
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    info!("$E");
+    return false;
 }
