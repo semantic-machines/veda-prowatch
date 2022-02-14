@@ -4,11 +4,13 @@ use crate::common::{
 };
 use prowatch_client::apis::Error;
 use serde_json::Value;
+use v_common::az_impl::common::f_authorize;
 use v_common::module::veda_backend::Backend;
 use v_common::onto::datatype::Lang;
 use v_common::onto::individual::Individual;
 use v_common::v_api::api_client::IndvOp;
 use v_common::v_api::obj::ResultCode;
+use v_common::v_authorization::common::Trace;
 
 pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     src_indv.parse_all();
@@ -183,31 +185,47 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
     }
 }
 
+fn is_user_in_group(user_id: &str, group: &str) -> bool {
+    let mut trace = Trace {
+        acl: &mut String::new(),
+        is_acl: false,
+        group: &mut String::new(),
+        is_group: true,
+        info: &mut String::new(),
+        is_info: false,
+        str_num: 0,
+    };
+
+    match f_authorize(user_id, user_id, 15, true, Some(&mut trace)) {
+        Ok(_res) => {
+            for gr in trace.group.split('\n') {
+                if gr == group {
+                    return true;
+                }
+            }
+        },
+        Err(e) => error!("failed check user in group [{}], user = {}, err = {}", group, &user_id, e),
+    }
+    return false;
+}
+
 fn check_company(card: &Value, backend: &mut Backend, src_indv: &mut Individual) -> bool {
-    info!("$1 card={:?}", card);
     if let Some(v) = get_custom_badge_as_list(&card).get("BADGE_COMPANY_ID") {
-        info!("$2 v={:?}", v);
         if let Some(company_id) = v.as_str() {
-            info!("$3");
             if let Ok(mut indv1) = get_individual_from_predicate(backend, src_indv, "v-s:creator") {
-                info!("$4");
+                if is_user_in_group(indv1.get_id(), "mnd-s:AllAccessPW_Group") {
+                    return true;
+                }
                 if let Ok(mut indv2) = get_individual_from_predicate(backend, &mut indv1, "v-s:parentOrganization") {
-                    info!("$5");
                     if indv2.get_first_literal("v-s:taxId").unwrap_or_default() == company_id {
                         return true;
                     }
 
-                    info!("$6");
                     if let Ok(mut indv3) = get_individual_from_predicate(backend, &mut indv2, "v-s:hasContractorProfileSafety") {
-                        info!("$7");
                         if let Some(indv4uris) = indv3.get_literals("mnd-s:subContractor") {
-                            info!("$8");
                             for id in indv4uris {
-                                info!("$9");
                                 if let Some(mut indv5) = backend.get_individual_s(&id) {
-                                    info!("$10");
                                     if indv5.get_first_literal("v-s:taxId").unwrap_or_default() == company_id {
-                                        info!("$11");
                                         return true;
                                     }
                                 }
@@ -219,6 +237,5 @@ fn check_company(card: &Value, backend: &mut Backend, src_indv: &mut Individual)
         }
     }
 
-    info!("$E");
     return false;
 }
