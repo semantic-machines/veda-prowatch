@@ -62,7 +62,7 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/badge/
     Проверка:
     [инн_организации_в_PW] = CustomBadgeFields.BADGE_COMPANY_ID (параметр из CustomBadgeFields запроса держателя)
     [инн_пользователя] = [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:taxId"] + [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:hasContractorProfileSafety"]["mnd-s:subContractor"]["v-s:taxId"] ("mnd-s:subContractor" множественное)
-    Если в перечне значений [инн_пользователя] нет [инн_организации_в_PW], то запрос отклоняется с v-s:errorMessage = "Информация о пропуске недоступна"
+    Если в перечне значений [инн_пользователя] нет [инн_организации_в_PW] и [инн_организации_в_PW]!="111111111111" || "000000000000", то запрос отклоняется с v-s:errorMessage = "Информация о пропуске недоступна"
 
 Вписать в [S]:
 v-s:description - LastName + FirstName + MiddleName через " "
@@ -75,6 +75,9 @@ mnd-s:winpakCardRecordId - BadgeID
 v-s:lastName - LastName
 v-s:firstName - FirstName
 v-s:middleName - MiddleName
+mnd-s:commentUPB - CustomBadgeFields.BADGE_NOTE_UPB
+mnd-s:commentES - CustomBadgeFields.BADGE_NOTE2
+
 
 данные карты:
 get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}
