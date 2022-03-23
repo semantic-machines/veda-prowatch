@@ -17,7 +17,7 @@ use uuid::Uuid;
 use v_common::module::veda_backend::Backend;
 use v_common::onto::datatype::Lang;
 use v_common::onto::individual::Individual;
-use v_common::onto::onto::Onto;
+use v_common::onto::onto_impl::Onto;
 use v_common::search::common::FTQuery;
 use v_common::v_api::api_client::IndvOp;
 use v_common::v_api::obj::ResultCode;
