@@ -336,17 +336,25 @@ get https://syk-vs155.mp.local:8734/pwapi/badges/{BadgeID}}/cards
         "BioSelectedCard": false
     }
 ]
-вытаскиваем все значения CardNumber для обработки, где ExpireDate больше текущей даты
+проверяем полученные карты на сроки действия и статусы
 
-- для каждой действующей карты выполняем запрос на включение
-
+- если ExpireDate БОЛЬШЕ текущей даты, для этой действующей карты выполняем запрос на включение (меняем статус на "Активно")
 cardnumber = номера карт полученные на предыдущем этапе
 put http://syk-vs149.mp.local:8734/pwapi/badges/cards
-
 {
     "CardNumber": "cardnumber",
     "CardStatus": 0,
 }
+
+- если ExpireDate МЕНЬШЕ текущей даты и CardStatus=8, то для этой НЕ действующей карты меняем статус на "истек срок действия"
+cardnumber = номера карт полученные на предыдущем этапе
+put http://syk-vs149.mp.local:8734/pwapi/badges/cards
+{
+    "CardNumber": "cardnumber",
+    "CardStatus": 7,
+}
+
+- остальные карты игнорируются
 
 - очищаем поле комментарий о не актуальном досье из держателя
 put http://syk-vs155.mp.local:8734/pwapi/badges

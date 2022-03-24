@@ -114,6 +114,7 @@ pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut I
 
                         if let Some(card_number) = get_str_from_value(&el, "CardNumber") {
                             if need_lock {
+                                // LOCK
                                 if let Some(card_status) = get_int_from_value(&el, "CardStatus") {
                                     if card_status == 0 {
                                         set_card_status(ctx, card_number, 8)?;
@@ -171,6 +172,7 @@ pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut I
                                     }
                                 }
                             } else {
+                                // UNLOCK
                                 let s_expire_date = get_str_from_value(&el, "ExpireDate").unwrap_or_default();
                                 if let Some(expire_date) = str_date_to_i64(s_expire_date, None) {
                                     if expire_date > get_now_00_00_00().timestamp() {
@@ -181,7 +183,25 @@ pub fn lock_unlock_card(backend: &mut Backend, ctx: &mut Context, indv_e: &mut I
                                             "TextValue": ""
                                             }
                                         ] });
+                                        if let Err(e) = ctx.pw_api_client.badging_api().badges_put(comment_js) {
+                                            error!("badges_put: err={:?}", e);
+                                        }
 
+                                        count_prepared_card += 1;
+                                    }
+
+                                    if expire_date < get_now_00_00_00().timestamp() {
+                                        if let Some(card_status) = get_int_from_value(&el, "CardStatus") {
+                                            if card_status == 8 {
+                                                set_card_status(ctx, card_number, 7)?;
+                                            }
+                                        }
+
+                                        let comment_js = json!({ "BadgeID": badge_id, "CustomBadgeFields": [{
+                                            "ColumnName": "BADGE_NOTE_UPB2",
+                                            "TextValue": ""
+                                            }
+                                        ] });
                                         if let Err(e) = ctx.pw_api_client.badging_api().badges_put(comment_js) {
                                             error!("badges_put: err={:?}", e);
                                         }
