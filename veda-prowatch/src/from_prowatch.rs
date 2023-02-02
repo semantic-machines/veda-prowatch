@@ -160,7 +160,7 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
             8 => "Авто откл.",
             _ => "?",
         };
-        indv.set_string("mnd-s:cardStatus", s, Lang::RU);
+        indv.set_string("mnd-s:cardStatus", s, Lang::new_from_str("RU"));
     }
 
     if let Some(d) = card.get("ExpireDate") {

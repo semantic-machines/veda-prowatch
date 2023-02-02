@@ -33,9 +33,9 @@ pub fn insert_to_prowatch(module: &mut Backend, ctx: &mut Context, indv: &mut In
             let mut icp = Individual::default();
             if module.get_individual(&cp_id, &mut icp).is_some() {
                 if let Some(employee) = module.get_individual(&mut icp.get_first_literal("v-s:employee").unwrap_or_default(), &mut Individual::default()) {
-                    first_name = employee.get_first_literal_with_lang("v-s:firstName", &[Lang::RU, Lang::NONE]).unwrap_or_default();
-                    last_name = employee.get_first_literal_with_lang("v-s:lastName", &[Lang::RU, Lang::NONE]).unwrap_or_default();
-                    middle_name = employee.get_first_literal_with_lang("v-s:middleName", &[Lang::RU, Lang::NONE]).unwrap_or_default();
+                    first_name = employee.get_first_literal_with_lang("v-s:firstName", &[Lang::new_from_str("RU"), Lang::none()]).unwrap_or_default();
+                    last_name = employee.get_first_literal_with_lang("v-s:lastName", &[Lang::new_from_str("RU"), Lang::none()]).unwrap_or_default();
+                    middle_name = employee.get_first_literal_with_lang("v-s:middleName", &[Lang::new_from_str("RU"), Lang::none()]).unwrap_or_default();
                     add_txt_to_fields(&mut custom_fields, "BADGE_TITLE", get_literal_of_link(module, &mut icp, "v-s:occupation", "rdfs:label"));
                     add_txt_to_fields(&mut custom_fields, "BADGE_DEPARTMENT", get_literal_of_link(module, &mut icp, "v-s:parentUnit", "rdfs:label"));
                     add_date_to_fields(&mut custom_fields, "BADGE_BIRTHDATE", employee.get_first_datetime("v-s:birthday"));
@@ -186,7 +186,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
                 } else if has_change_kind_for_pass == "d:e8j2tpz9r613hxq4g4rbbxtfqe" {
                     is_need_block_card = true;
                 } else if has_change_kind_for_pass == "d:a8kf3r1ryfotqg695yckpm2isih" {
-                    cardholder_family = indv_c.get_first_literal_with_lang("mnd-s:passLastName", &[Lang::RU, Lang::NONE]);
+                    cardholder_family = indv_c.get_first_literal_with_lang("mnd-s:passLastName", &[Lang::new_from_str("RU"), Lang::none()]);
                     is_update_family = true;
                 } else if has_change_kind_for_pass == "d:a5y91zferr8t41abib4ecdlggn0" {
                     ts_number = indv_c.get_first_literal("mnd-s:passVehicleRegistrationNumber");

@@ -20,6 +20,6 @@ tiberius = {version="0.3.2", default-features=false,features=["chrono"]}
 futures-state-stream = "0.1"
 voca_rs = "1.8.0"
 
-v_queue = "=0.2.2"
+v_queue = "=0.2.3"
 
 v_module = { package = "v-common-module", version = "=0.1.50" }

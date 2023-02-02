@@ -113,7 +113,7 @@ pub fn clear_card_and_set_err(module: &mut Backend, sys_ticket: &str, indv: &mut
     indv.clear("v-s:description");
     indv.clear("mnd-s:passEquipment");
     indv.clear("v-s:tabNumber");
-    indv.set_string("v-s:errorMessage", err_text, Lang::RU);
+    indv.set_string("v-s:errorMessage", err_text, Lang::new_from_str("RU"));
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
     match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
@@ -128,7 +128,7 @@ pub fn clear_card_and_set_err(module: &mut Backend, sys_ticket: &str, indv: &mut
 
 pub fn set_err(module: &mut Backend, sys_ticket: &str, indv: &mut Individual, err_text: &str) {
     indv.parse_all();
-    indv.set_string("v-s:errorMessage", err_text, Lang::RU);
+    indv.set_string("v-s:errorMessage", err_text, Lang::new_from_str("RU"));
     indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
 
     match module.mstorage_api.update_use_param(sys_ticket, "prowatch", "", 0, IndvOp::Put, indv) {
@@ -225,7 +225,7 @@ pub fn get_str_from_value<'a>(src_value: &'a Value, src_field: &str) -> Option<&
 pub fn str_value2indv(src_val: &Value, src_field: &str, dest_indv: &mut Individual, dest_field: &str) {
     if let Some(v1) = src_val.get(src_field) {
         if let Some(s1) = v1.as_str() {
-            dest_indv.add_string(dest_field, s1, Lang::NONE);
+            dest_indv.add_string(dest_field, s1, Lang::none());
         }
     }
 }
@@ -293,9 +293,9 @@ pub fn get_badge_use_request_indv(
                     let mut icp = Individual::default();
                     if module.get_individual(&cp_id, &mut icp).is_some() {
                         if let Some(employee) = module.get_individual(&mut icp.get_first_literal("v-s:employee").unwrap_or_default(), &mut Individual::default()) {
-                            first_name = employee.get_first_literal_with_lang("v-s:firstName", &[Lang::RU, Lang::NONE]).unwrap_or_default();
-                            last_name = employee.get_first_literal_with_lang("v-s:lastName", &[Lang::RU, Lang::NONE]).unwrap_or_default();
-                            middle_name = employee.get_first_literal_with_lang("v-s:middleName", &[Lang::RU, Lang::NONE]).unwrap_or_default();
+                            first_name = employee.get_first_literal_with_lang("v-s:firstName", &[Lang::new_from_str("RU"), Lang::none()]).unwrap_or_default();
+                            last_name = employee.get_first_literal_with_lang("v-s:lastName", &[Lang::new_from_str("RU"), Lang::none()]).unwrap_or_default();
+                            middle_name = employee.get_first_literal_with_lang("v-s:middleName", &[Lang::new_from_str("RU"), Lang::none()]).unwrap_or_default();
                         }
                     }
                 } else {
@@ -496,7 +496,7 @@ pub fn create_asc_record(el: &Value, backward_id: &str, cards: Vec<String>) -> I
     acs_record.set_uri("v-s:backwardProperty", "mnd-s:hasACSRecord");
     acs_record.set_uri("v-s:backwardTarget", backward_id);
     acs_record.set_bool("v-s:canRead", true);
-    acs_record.set_string("mnd-s:cardNumber", &format!("{:?}", cards), Lang::NONE);
+    acs_record.set_string("mnd-s:cardNumber", &format!("{:?}", cards), Lang::none());
 
     set_badge_to_indv(&el, &mut acs_record);
 
@@ -510,35 +510,35 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
 
     if let Some(v) = el.get("BadgeID") {
         if let Some(s) = v.as_str() {
-            dest.set_string("mnd-s:winpakCardRecordId", &s, Lang::NONE);
+            dest.set_string("mnd-s:winpakCardRecordId", &s, Lang::none());
         }
     }
 
     if let Some(v) = el.get("LastName") {
         if let Some(s) = v.as_str() {
-            dest.set_string("v-s:lastName", &s, Lang::RU);
+            dest.set_string("v-s:lastName", &s, Lang::new_from_str("RU"));
         }
     }
 
     if let Some(v) = el.get("FirstName") {
         if let Some(s) = v.as_str() {
-            dest.set_string("v-s:firstName", &s, Lang::RU);
+            dest.set_string("v-s:firstName", &s, Lang::new_from_str("RU"));
         }
     }
 
     if let Some(v) = el.get("MiddleName") {
         if let Some(s) = v.as_str() {
-            dest.set_string("v-s:middleName", &s, Lang::RU);
+            dest.set_string("v-s:middleName", &s, Lang::new_from_str("RU"));
         }
     }
 
     if let Some(s) = concat_fields(&["LastName", "FirstName", "MiddleName"], el.as_object(), " ") {
-        dest.set_string("v-s:description", &s, Lang::RU);
+        dest.set_string("v-s:description", &s, Lang::new_from_str("RU"));
     }
 
     let fields = get_custom_badge_as_list(el);
     if let Some(s) = concat_fields(&["BADGE_COMPANY_NAME", "BADGE_DEPARTMENT", "BADGE_TITLE"], Some(&fields), " ") {
-        dest.set_string("rdfs:comment", &s, Lang::RU);
+        dest.set_string("rdfs:comment", &s, Lang::new_from_str("RU"));
     }
 
     if let Some(d) = fields.get("BADGE_BIRTHDATE") {
@@ -550,19 +550,19 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
 
     if let Some(v) = fields.get("BADGE_NOTE_UPB") {
         if let Some(s) = v.as_str() {
-            dest.set_string("mnd-s:commentUPB", &s, Lang::NONE);
+            dest.set_string("mnd-s:commentUPB", &s, Lang::none());
         }
     }
 
-    if let Some(v) = fields.get("BADGE_NOTE2") {
+    if let Some(v) = fields.get("BADGE_NOTE") {
         if let Some(s) = v.as_str() {
-            dest.set_string("mnd-s:commentES", &s, Lang::NONE);
+            dest.set_string("mnd-s:commentES", &s, Lang::none());
         }
     }
 
     if let Some(v) = fields.get("BADGE_ID") {
         if let Some(s) = v.as_str() {
-            dest.set_string("v-s:tabNumber", &s, Lang::NONE);
+            dest.set_string("v-s:tabNumber", &s, Lang::none());
         }
     }
 
@@ -590,7 +590,7 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
         Some(&fields),
         "\n",
     ) {
-        dest.set_string("mnd-s:passEquipment", &s, Lang::RU);
+        dest.set_string("mnd-s:passEquipment", &s, Lang::new_from_str("RU"));
     }
 }
 
@@ -938,10 +938,10 @@ pub fn send_message_of_status_lock_unlock(ctx: &mut Context, backend: &mut Backe
         }
 
         if reason_uri == "d:a0aoowjbm91ef2lw57c8lo29772" {
-            message.set_string("v-s:senderMailbox", "DocFlow.Syktyvkar@mondigroup.com", Lang::NONE);
+            message.set_string("v-s:senderMailbox", "DocFlow.Syktyvkar@mondigroup.com", Lang::none());
         }
 
-        message.set_string("v-s:subject", "Optiflow. Уведомление: Заблокирован пропуск", Lang::RU);
+        message.set_string("v-s:subject", "Optiflow. Уведомление: Заблокирован пропуск", Lang::new_from_str("RU"));
         message.set_string(
             "v-s:messageBody",
             &format!(
@@ -953,12 +953,12 @@ pub fn send_message_of_status_lock_unlock(ctx: &mut Context, backend: &mut Backe
         Система Optiflow ",
                 owner, reason_txt
             ),
-            Lang::RU,
+            Lang::new_from_str("RU"),
         );
     } else {
-        message.set_string("v-s:senderMailbox", "DocFlow.Syktyvkar@mondigroup.com", Lang::NONE);
+        message.set_string("v-s:senderMailbox", "DocFlow.Syktyvkar@mondigroup.com", Lang::none());
 
-        message.set_string("v-s:subject", "Optiflow. Уведомление: Разблокирован пропуск", Lang::RU);
+        message.set_string("v-s:subject", "Optiflow. Уведомление: Разблокирован пропуск", Lang::new_from_str("RU"));
         message.set_string(
             "v-s:messageBody",
             &format!(
@@ -970,7 +970,7 @@ pub fn send_message_of_status_lock_unlock(ctx: &mut Context, backend: &mut Backe
         Система Optiflow ",
                 owner, reason_txt
             ),
-            Lang::RU,
+            Lang::new_from_str("RU"),
         );
     }
 
