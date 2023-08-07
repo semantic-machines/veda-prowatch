@@ -489,7 +489,9 @@ pub fn get_custom_badge_as_list(el: &Value) -> Map<String, Value> {
     fields
 }
 
-pub fn create_asc_record(el: &Value, backward_id: &str, cards: Vec<String>) -> Individual {
+pub fn create_asc_record(el: &Value, backward_id: &str, cards: Vec<String>, src: &str) -> Individual {
+
+    warn!("create_asc_record,  {}", src);
     let mut acs_record = Individual::default();
     acs_record.set_id(&("d:asc_".to_owned() + &Uuid::new_v4().to_string()));
     acs_record.set_uri("rdf:type", "mnd-s:ACSRecord");
@@ -887,6 +889,21 @@ pub fn get_now_00_00_00() -> NaiveDateTime {
     let d = NaiveDateTime::from_timestamp(Utc::now().timestamp(), 0);
     let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(0, 0, 0);
     d_0
+}
+
+pub fn get_now_23_59_59() -> NaiveDateTime {
+    let d = NaiveDateTime::from_timestamp(Utc::now().timestamp(), 0);
+    let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(23, 59, 59);
+    d_0
+}
+
+pub fn set_23_59_59(d: Option<i64>) -> Option<i64> {
+    if let Some(d0) = d {
+        let d = NaiveDateTime::from_timestamp(d0, 0);
+        let d_0 = NaiveDate::from_ymd(d.year(), d.month(), d.day()).and_hms(23, 59, 59);
+        return Some(d_0.timestamp());
+    }
+    None
 }
 
 pub fn i64_to_str_date_ymdthms(date: Option<i64>) -> String {

@@ -55,7 +55,7 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/%25{car_number}%
         ]
     }
 ]
-В полученном перечне объектов ищем те в которых значение CustomBadgeFields/BADGE_COMPANY_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
+В полученном перечне объектов ищем те в которых значение CustomBadgeFields/BADGE_COMPANY_ID или CustomBadgeFields/BADGE_SUBDIVISION_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
 Если ничего не вернулось, то [S].["v-s:errorMessage"] = "Держатель не найден"
 
 По результату выполнения запроса держателей (get http://syk-vs149.mp.local:8734/pwapi/badges/key/....) перед созданием объектов mnd-s:ACSRecord выполняем запрос карт по каждому полученному держателю. Цель - исключить держателей, у которых нет карт или все карты не действительны
@@ -123,7 +123,7 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/key/BADGE_LNAME/{lastname}?$filt
 Если ничего не вернулось, то [S].["v-s:errorMessage"] = "Держатель не найден"
 
 В полученном перечне объектов ищем те в которых значения
-    CustomBadgeFields/BADGE_COMPANY_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
+    CustomBadgeFields/BADGE_COMPANY_ID или CustomBadgeFields/BADGE_SUBDIVISION_ID = [S].["v-s:taxId"] (соответствует компании сотрудника).
     CustomBadgeFields/BADGE_BIRTHDATE = [S].["v-s:birthday"] (совпадает год рождения)
 
 По результату выполнения запроса держателей (get http://syk-vs149.mp.local:8734/pwapi/badges/key/....) перед созданием объектов mnd-s:ACSRecord выполняем запрос карт по каждому полученному держателю. Цель - исключить держателей, у которых нет карт или все карты не действительны

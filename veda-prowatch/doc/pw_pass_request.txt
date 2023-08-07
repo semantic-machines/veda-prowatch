@@ -76,7 +76,7 @@ v-s:lastName - LastName
 v-s:firstName - FirstName
 v-s:middleName - MiddleName
 mnd-s:commentUPB - CustomBadgeFields.BADGE_NOTE_UPB
-mnd-s:commentES - CustomBadgeFields.BADGE_NOTE2
+mnd-s:commentES - CustomBadgeFields.BADGE_NOTE
 
 
 данные карты:
@@ -165,7 +165,7 @@ mnd-s:hasAccessLevel = выполнить поиск уровней доступ
 
 - обновляем срок карты
 
-dateto = [C]["v-s:dateToFact"] в формате 2020-12-08T00:00:00
+dateto = [C]["v-s:dateToFact"] в формате 2020-12-08T23:59:59 время 23:59:59
 cardnumber = [C]["mnd-s:hasSourceDataRequestForPass"]["mnd-s:cardNumber"]
 
 put http://syk-vs149.mp.local:8734/pwapi/badges/cards
@@ -549,7 +549,7 @@ v-s:birthday - CustomBadgeFields.BADGE_BIRTHDATE
 mnd-s:winpakCardRecordId - BadgeID
 #новое
 mnd-s:commentUPB - CustomBadgeFields.BADGE_NOTE_UPB
-mnd-s:commentES - CustomBadgeFields.BADGE_NOTE2
+mnd-s:commentES - CustomBadgeFields.BADGE_NOTE
 
 
 
@@ -637,7 +637,7 @@ v-s:fileName v-s:filePath v-s:fileSize = вычисляемые
 cardnumber = [P]["mnd-s:cardNumber"]
 BadgeID = [R]["mnd-s:winpakCardRecordId"]
 accessLevel = [P]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
-dateTo = [P]["v-s:dateToFact"]
+dateTo = [P]["v-s:dateToFact"] время 23:59:59
 
 - отвязываем карту от текущих держателей
 
@@ -681,7 +681,7 @@ post http://syk-vs149.mp.local:8734/pwapi/badges/cards
 Заменяем все поля для оборудования в держателе карты
 
 BadgeID = [R]["mnd-s:winpakCardRecordId"]
-dateTo = [P]["v-s:dateToFact"]
+dateTo = [P]["v-s:dateToFact"] время 23:59:59
 tool1-tool11 = разделить значение [P]["mnd-s:passEquipment"] построчно и вписать в BADGE_TOOL01 - BADGE_TOOL11 соответственно (если не хватает tool, то оставшееся вписать в последнее) (сейчас реализовано также в winpak)
 kpp_numbers = собрать из значений через пробел в [C]["mnd-s:hasAccesslevel"]["mnd-s:accessLevelCheckpoints"] (в mnd-s:hasAccessLevel может быть несколько значений) (в винпаке это было поле Note24)
 position = если заполнено [P]["v-s:correspondentPerson"], то [P]["v-s:correspondentPerson"]["v-s:occupation"]["rdfs:label"]
@@ -1070,7 +1070,7 @@ post http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/photo подстав�
 cardnumber = [P]["mnd-s:cardNumber"]
 BadgeID = id держателя из ответа о создании
 accessLevel = [P]["mnd-s:hasAccesslevel"]["v-s:registrationNumberAdd"] mnd-s:hasAccesslevel может быть множественным
-dateTo = [P]["v-s:dateFactTo"] в формате 2021-03-23T23:59:59
+dateTo = [P]["v-s:dateFactTo"] в формате 2021-03-23T23:59:59 время 23:59:59
 
 - отвязываем карту от текущих держателей
 

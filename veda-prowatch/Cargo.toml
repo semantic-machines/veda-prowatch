@@ -17,6 +17,6 @@ jsonpath = "0.1.1"
 array_tool = "1.0.3"
 
 v_queue = "=0.2.4"
-v_common = { package = "v-common", version = "=0.4.43" }
+v_common = { package = "v-common", version = "=0.4.52" }
 
 prowatch_client = { path = "../prowatch-client" }

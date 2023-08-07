@@ -25,7 +25,8 @@ pub fn insert_to_prowatch(module: &mut Backend, ctx: &mut Context, indv: &mut In
     let mut first_name = String::new();
     let mut last_name = String::new();
     let mut middle_name = String::new();
-    let date_to = indv_p.get_first_datetime("v-s:dateToFact");
+    let date_to = set_23_59_59(indv_p.get_first_datetime("v-s:dateToFact"));
+
     let mut custom_fields = vec![];
 
     if pass_type == PassType::Human {
@@ -319,9 +320,9 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
 
         if is_update || is_need_block_card {
             let date_to = if is_need_block_card {
-                Some(get_now_00_00_00().timestamp())
+                Some(get_now_23_59_59().timestamp())
             } else {
-                indv_c.get_first_datetime("v-s:dateToFact")
+                set_23_59_59(indv_c.get_first_datetime("v-s:dateToFact"))
             };
 
             let status = if is_need_block_card {
@@ -381,7 +382,7 @@ fn add_card_with_access_to_pw(module: &mut Backend, ctx: &mut Context, badge_id:
     "BadgeID": badge_id,
     "CardNumber": card_number,
     "CardStatus": 0,
-    "ExpireDate": i64_to_str_date_ymdthms (src.get_first_datetime("v-s:dateToFact")),
+    "ExpireDate": i64_to_str_date_ymdthms (set_23_59_59(src.get_first_datetime("v-s:dateToFact"))),
     "Company": {
         "CompanyID": "0x004842343236434238382D443536302D3433"
         },

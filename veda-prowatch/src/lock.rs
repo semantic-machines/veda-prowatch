@@ -72,10 +72,20 @@ pub fn lock_holder(module: &mut Backend, ctx: &mut Context, pass_type: PassType,
         }
 
         if !valid_cards.is_empty() {
+            let mut created_asc_to_company_id = "";
             if let Some(btaxid) = fields.get("BADGE_COMPANY_ID") {
                 if let Some(t) = btaxid.as_str() {
                     if t == tax_id && is_next {
-                        let acs_record = create_asc_record(&badge, indv_s.get_id(), valid_cards);
+                        created_asc_to_company_id = t;
+                        let acs_record = create_asc_record(&badge, indv_s.get_id(), valid_cards.clone(), &format!("lock BADGE_COMPANY_ID={}", t));
+                        asc_indvs.push(acs_record);
+                    }
+                }
+            }
+            if let Some(btaxid) = fields.get("BADGE_SUBDIVISION_ID") {
+                if let Some(t) = btaxid.as_str() {
+                    if t == tax_id && is_next && t != created_asc_to_company_id {
+                        let acs_record = create_asc_record(&badge, indv_s.get_id(), valid_cards, &format!("lock BADGE_SUBDIVISION_ID={}", t));
                         asc_indvs.push(acs_record);
                     }
                 }

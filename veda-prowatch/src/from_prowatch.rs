@@ -27,7 +27,8 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
 
         src_indv.clear("mnd-s:hasACSRecord");
         for el in res_badge.1.unwrap_or_default() {
-            let mut acs_record = create_asc_record(&el, src_indv.get_id(), vec![]);
+            warn!("badge el={}", el);
+            let mut acs_record = create_asc_record(&el, src_indv.get_id(), vec![], "from-prowatch");
 
             if let Some(badge_id) = acs_record.get_first_literal("mnd-s:winpakCardRecordId") {
                 acs_record.clear("mnd-s:cardNumber");

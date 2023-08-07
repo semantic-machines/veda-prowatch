@@ -9,10 +9,11 @@
  */
 
 use reqwest;
-use reqwest::Certificate;
+use reqwest::{Certificate, ClientBuilder};
 use reqwest::Client;
 use std::fs::File;
 use std::io::prelude::*;
+use std::time::Duration;
 
 pub struct Configuration {
     pub base_path: String,
@@ -37,7 +38,13 @@ impl Configuration {
         let ba = (user.to_owned(), Some(pass.to_owned()));
 
         let mut buf = Vec::new();
-        let mut client = reqwest::Client::new();
+        println!("!!! USE .danger_accept_invalid_certs(true)");
+        let mut client = ClientBuilder::new()
+            .danger_accept_invalid_certs(true)
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+
         if let Ok(mut f) = File::open("cert.der") {
             if f.read_to_end(&mut buf).is_ok() {
                 let cert = Certificate::from_der(&buf).unwrap();
