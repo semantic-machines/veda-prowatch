@@ -9,9 +9,9 @@ use prowatch_client::apis::Error;
 use serde_json::json;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::{fs, io};
 use std::fs::File;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::ops::{Add, Sub};
 use uuid::Uuid;
 use v_common::module::veda_backend::Backend;
@@ -30,7 +30,6 @@ pub enum PassType {
     Unknown,
 }
 
-pub const CARD_NUMBER_FIELD_NAME: &str = "mnd-s:cardNumber";
 pub const S_MAX_TIME: &str = "2100-01-01T00:00:00";
 
 pub struct Context {
@@ -40,19 +39,38 @@ pub struct Context {
     pub access_level_dict: HashMap<String, String>,
 }
 
-pub fn load_access_level_dir(module: &mut Backend, sys_ticket: &str) -> HashMap<String, String> {
+pub fn map_card_status(n: i64) -> String {
+    return match n {
+        0 => "Активна".to_string(),
+        1 => "Отключена".to_string(),
+        2 => "Утеряна".to_string(),
+        3 => "Украдена".to_string(),
+        4 => "Сдана".to_string(),
+        5 => "Неучтенная".to_string(),
+        6 => "Аннулированная".to_string(),
+        7 => "Истек срок действия".to_string(),
+        8 => "Авто откл.".to_string(),
+        _ => "?".to_string(),
+    };
+}
+
+pub fn load_access_level_dict(module: &mut Backend, sys_ticket: &str) -> io::Result<HashMap<String, String>> {
+    info!("load access level dict");
     let mut dir = HashMap::new();
     let res = module.fts.query(FTQuery::new_with_ticket(&sys_ticket, "'rdf:type'=='mnd-s:AccessLevel'"));
     if res.result_code == ResultCode::Ok && res.count > 0 {
         for id in &res.result {
             if let Some(indv) = module.get_individual(id, &mut Individual::default()) {
                 if let Some(s) = indv.get_first_literal("v-s:registrationNumberAdd") {
+                    info!("{} - {}", s, indv.get_id());
                     dir.insert(s, indv.get_id().to_owned());
                 }
             }
         }
+    } else {
+        return Err(io::Error::new (ErrorKind::Other, "fail load access level dict"));
     }
-    dir
+    Ok(dir)
 }
 
 pub fn get_equipment_list(indv: &mut Individual, list: &mut Vec<String>) {
@@ -222,10 +240,18 @@ pub fn get_str_from_value<'a>(src_value: &'a Value, src_field: &str) -> Option<&
     None
 }
 
-pub fn str_value2indv(src_val: &Value, src_field: &str, dest_indv: &mut Individual, dest_field: &str) {
-    if let Some(v1) = src_val.get(src_field) {
-        if let Some(s1) = v1.as_str() {
-            dest_indv.add_string(dest_field, s1, Lang::none());
+pub fn str_value2indv_card_number(src_val: &Value, dest_indv: &mut Individual) {
+    if let Some(v1) = src_val.get("CardNumber") {
+        if let Some(card_number_str) = v1.as_str() {
+            let mut s2 = card_number_str.to_string();
+
+            if let Some(v1) = src_val.get("CardStatus") {
+                if let Some(s1) = v1.as_i64() {
+                    s2 = format!("{} - {}", card_number_str, map_card_status(s1));
+                }
+            }
+
+            dest_indv.add_string("mnd-s:cardNumber", &s2, Lang::none());
         }
     }
 }
@@ -490,7 +516,6 @@ pub fn get_custom_badge_as_list(el: &Value) -> Map<String, Value> {
 }
 
 pub fn create_asc_record(el: &Value, backward_id: &str, cards: Vec<String>, src: &str) -> Individual {
-
     warn!("create_asc_record,  {}", src);
     let mut acs_record = Individual::default();
     acs_record.set_id(&("d:asc_".to_owned() + &Uuid::new_v4().to_string()));
@@ -596,13 +621,27 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
     }
 }
 
-pub fn set_card_status(ctx: &mut Context, card_number: &str, card_status: i32) -> Result<(), (ResultCode, String)> {
+pub fn extract_card_number(in1: &str) -> &str {
+    let out1 = if in1.find(" - ").is_some() {
+        if let Some((a, _b)) = in1.split_once('-') {
+            a.trim()
+        } else {
+            in1
+        }
+    } else {
+        in1
+    };
+    out1
+}
+pub fn set_card_status(ctx: &mut Context, card_number0: &str, card_status: i32) -> Result<(), (ResultCode, String)> {
+    let card_number = extract_card_number(card_number0);
+
     let cnj = json!({
         "CardNumber": card_number,
         "CardStatus": card_status,
     });
-    if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_put(cnj) {
-        error!("block cards if exist temp card: badges_cards_card: err={:?}", e);
+    if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_put(cnj.clone()) {
+        error!("block cards if exist temp card: badges_cards_card: err={:?}, src={:?}", e, cnj);
         return Err((ResultCode::FailStore, format!("{:?}", e)));
     }
     Ok(())

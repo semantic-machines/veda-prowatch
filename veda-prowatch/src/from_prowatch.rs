@@ -1,6 +1,6 @@
 use crate::common::{
     create_asc_record, get_badge_use_request_indv, get_custom_badge_as_list, get_individual_from_predicate, get_int_from_value, get_str_from_value, pw_photo_to_veda,
-    set_badge_to_indv, str_value2indv, Context, CARD_NUMBER_FIELD_NAME,
+    set_badge_to_indv, str_value2indv_card_number, Context,
 };
 use prowatch_client::apis::Error;
 use serde_json::Value;
@@ -16,7 +16,9 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
     src_indv.parse_all();
     let mut asc_indvs = vec![];
 
+    warn!("@1");
     if src_indv.get_first_literal("mnd-s:hasPassKind").is_some() {
+        warn!("@2");
         let res_badge = get_badge_use_request_indv(backend, ctx, None, src_indv);
         if let Err(e) = res_badge.1 {
             return match e {
@@ -24,6 +26,7 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
                 _ => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
             };
         }
+        warn!("@3");
 
         src_indv.clear("mnd-s:hasACSRecord");
         for el in res_badge.1.unwrap_or_default() {
@@ -33,7 +36,7 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
             if let Some(badge_id) = acs_record.get_first_literal("mnd-s:winpakCardRecordId") {
                 acs_record.clear("mnd-s:cardNumber");
                 for el1 in ctx.pw_api_client.badging_api().badges_badge_id_cards(&badge_id).unwrap_or_default() {
-                    str_value2indv(&el1, "CardNumber", &mut acs_record, "mnd-s:cardNumber");
+                    str_value2indv_card_number(&el1, &mut acs_record);
                 }
 
                 pw_photo_to_veda(backend, ctx, &badge_id, &mut acs_record);
@@ -42,11 +45,14 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
             asc_indvs.push(acs_record);
         }
     } else {
-        let card_number = src_indv.get_first_literal(CARD_NUMBER_FIELD_NAME).unwrap_or(String::default());
+        warn!("@4");
+
+        let card_number = src_indv.get_first_literal("mnd-s:cardNumber").unwrap_or(String::default());
         if card_number.is_empty() {
-            error!("fail read {}.{}", CARD_NUMBER_FIELD_NAME, src_indv.get_id());
+            error!("fail read {}.{}", "mnd-s:cardNumber", src_indv.get_id());
             return Err((ResultCode::UnprocessableEntity, "".to_owned()));
         }
+        warn!("@5 card_number={}", card_number);
 
         let res_card = ctx.pw_api_client.badging_api().badges_cards_card(&card_number);
         if let Err(e) = res_card {
@@ -58,6 +64,8 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
             };
         }
 
+        warn!("@5 res_card={:?}", res_card);
+
         let res_badge = ctx.pw_api_client.badging_api().badges_cards(&card_number);
         if let Err(e) = res_badge {
             error!("badges_cards: err={:?}", e);
@@ -67,17 +75,21 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
             };
         }
         let res_badge = res_badge.unwrap_or_default();
+        warn!("@6 res_badge={:?}", res_badge);
 
         let card = res_card.unwrap();
         if !card.is_object() {
             return Ok(());
         }
         if let Some(s) = get_str_from_value(&card, "CardNumber") {
+            warn!("@7 s={:?}", s);
+
             if s != card_number {
-                error!("fail read {}.{}, request card number not equal response", CARD_NUMBER_FIELD_NAME, src_indv.get_id());
+                error!("fail read {}.{}, request card number not equal response", "mnd-s:cardNumber", src_indv.get_id());
                 return Err((ResultCode::UnprocessableEntity, "".to_owned()));
             }
         }
+
 
         /*
         Перед дальнейшими действиями требуется проверить соответствие организации сотрудника указанной в PW и пользователя создающего запрос:
@@ -91,10 +103,14 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
                 return Err((ResultCode::UnprocessableEntity, "Информация о пропуске недоступна".to_owned()));
             }
         }
+
+        warn!("@8 card={:?}", card);
         set_card_to_indv(card, src_indv, ctx);
+
         if let Some(badge) = res_badge.get(0) {
             set_badge_to_indv(badge, src_indv);
         }
+        warn!("@9 indv={:?}", src_indv.get_obj().as_json_str());
     }
 
     src_indv.set_uri("v-s:lastEditor", "cfg:VedaSystemAppointment");
@@ -211,28 +227,38 @@ fn is_user_in_group(user_id: &str, group: &str) -> bool {
 }
 
 fn check_company(card: &Value, backend: &mut Backend, src_indv: &mut Individual) -> bool {
-    if let Some(v) = get_custom_badge_as_list(&card).get("BADGE_COMPANY_ID") {
-        if let Some(company_id) = v.as_str() {
-            if company_id == "111111111111" || company_id == "000000000000" {
+    let custom_badges = get_custom_badge_as_list(&card);
+    let mut company_ids = vec![];
+    if let Some(v) = custom_badges.get("BADGE_COMPANY_ID") {
+        if let Some(id) = v.as_str() {
+            company_ids.push(id.to_string());
+        }
+    }
+    if let Some(v) = custom_badges.get("BADGE_SUBDIVISION_ID") {
+        if let Some(id) = v.as_str() {
+            company_ids.push(id.to_string());
+        }
+    }
+
+    if company_ids.contains(&"111111111111".to_string()) || company_ids.contains(&"000000000000".to_string()) {
+        return true;
+    }
+
+    if let Ok(mut indv1) = get_individual_from_predicate(backend, src_indv, "v-s:creator") {
+        if is_user_in_group(indv1.get_id(), "mnd-s:AllAccessPW_Group") {
+            return true;
+        }
+        if let Ok(mut indv2) = get_individual_from_predicate(backend, &mut indv1, "v-s:parentOrganization") {
+            if company_ids.contains(&indv2.get_first_literal("v-s:taxId").unwrap_or_default()) {
                 return true;
             }
-            if let Ok(mut indv1) = get_individual_from_predicate(backend, src_indv, "v-s:creator") {
-                if is_user_in_group(indv1.get_id(), "mnd-s:AllAccessPW_Group") {
-                    return true;
-                }
-                if let Ok(mut indv2) = get_individual_from_predicate(backend, &mut indv1, "v-s:parentOrganization") {
-                    if indv2.get_first_literal("v-s:taxId").unwrap_or_default() == company_id {
-                        return true;
-                    }
 
-                    if let Ok(mut indv3) = get_individual_from_predicate(backend, &mut indv2, "v-s:hasContractorProfileSafety") {
-                        if let Some(indv4uris) = indv3.get_literals("mnd-s:subContractor") {
-                            for id in indv4uris {
-                                if let Some(mut indv5) = backend.get_individual_s(&id) {
-                                    if indv5.get_first_literal("v-s:taxId").unwrap_or_default() == company_id {
-                                        return true;
-                                    }
-                                }
+            if let Ok(mut indv3) = get_individual_from_predicate(backend, &mut indv2, "v-s:hasContractorProfileSafety") {
+                if let Some(indv4uris) = indv3.get_literals("mnd-s:subContractor") {
+                    for id in indv4uris {
+                        if let Some(mut indv5) = backend.get_individual_s(&id) {
+                            if company_ids.contains(&indv5.get_first_literal("v-s:taxId").unwrap_or_default()) {
+                                return true;
                             }
                         }
                     }

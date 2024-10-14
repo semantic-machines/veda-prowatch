@@ -6,7 +6,8 @@ mod from_prowatch;
 mod lock;
 mod to_prowatch;
 
-use crate::common::{clear_card_and_set_err, load_access_level_dir, set_update_status, Context, PassType};
+use std::process::exit;
+use crate::common::{clear_card_and_set_err, load_access_level_dict, set_update_status, Context, PassType};
 use crate::from_prowatch::sync_data_from_prowatch;
 use crate::lock::{lock_holder, lock_unlock_card};
 use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, update_prowatch_data};
@@ -81,11 +82,17 @@ fn listen_queue<'a>() -> Result<(), i32> {
         return Err(-1);
     }
 
+    let dict = load_access_level_dict(&mut backend, &sys_ticket);
+    if let Err(e) = dict {
+        error!("{:?}", e);
+        exit(-1);
+    }
+
     let mut ctx = Context {
         sys_ticket: sys_ticket.to_owned(),
         onto,
         pw_api_client: PWAPIClient::new(configuration),
-        access_level_dict: load_access_level_dir(&mut backend, &sys_ticket),
+        access_level_dict: dict.unwrap(),
     };
 
     module.listen_queue(

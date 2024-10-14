@@ -60,7 +60,7 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/cards/{cardnumber}/badge/
 
 Перед дальнейшими действиями требуется проверить соответствие организации сотрудника указанной в PW и пользователя создающего запрос. Если пользователь указанный в [S].["v-s:creator"] является членом группы mnd-s:AllAccessPW_Group , то проверка не выполняется и сразу переходим к обработке.
     Проверка:
-    [инн_организации_в_PW] = CustomBadgeFields.BADGE_COMPANY_ID (параметр из CustomBadgeFields запроса держателя)
+    [инн_организации_в_PW] = CustomBadgeFields.BADGE_COMPANY_ID и CustomBadgeFields.BADGE_SUBDIVISION_ID (параметры из CustomBadgeFields запроса держателя)
     [инн_пользователя] = [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:taxId"] + [S].["v-s:creator"]["v-s:parentOrganization"]["v-s:hasContractorProfileSafety"]["mnd-s:subContractor"]["v-s:taxId"] ("mnd-s:subContractor" множественное)
     Если в перечне значений [инн_пользователя] нет [инн_организации_в_PW] и [инн_организации_в_PW]!="111111111111" || "000000000000", то запрос отклоняется с v-s:errorMessage = "Информация о пропуске недоступна"
 
@@ -603,7 +603,16 @@ get http://syk-vs149.mp.local:8734/pwapi/badges/{BadgeID}/cards
 ]
 
 Вписать в [R]:
-mnd-s:cardNumber =  вписать все значения CardNumber полученных объектов, может быть несколько значений
+mnd-s:cardNumber =  для каждого полученной карты собрать строку: <значение CardNumber> - <значение CardStatus> (значение CardStatus - цифра, мепится по списку ниже)
+    0 - "Активна"
+    1 - "Отключена"
+    2 - "Утеряна"
+    3 - "Украдена"
+    4 - "Сдана"
+    5 - "Неучтенная"
+    6 - "Аннулированная"
+    7 - "Истек срок действия"
+    8 - "Авто откл."
 
 ####Получаем фото держателя
 Для каждого найденного держателя [R] также выполняем запрос фотографии
