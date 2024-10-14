@@ -58,9 +58,9 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
         if let Err(e) = res_card {
             error!("badges_cards_card: err={:?}", e);
             return match e {
-                Error::Reqwest(_) => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
-                Error::Serde(_) => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
+                Error::Reqwest(_) | Error::Serde(_) => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
                 Error::Io(_) => Err((ResultCode::ConnectError, "Карта не найдена".to_owned())),
+                _ => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
             };
         }
 
@@ -105,7 +105,8 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
         }
 
         warn!("@8 card={:?}", card);
-        set_card_to_indv(card, src_indv, ctx);
+        set_card_to_indv(card, src_indv, ctx, backend)?;
+        // Обновили вызов функции, добавив backend и обработку ошибок
 
         if let Some(badge) = res_badge.get(0) {
             set_badge_to_indv(badge, src_indv);
@@ -137,34 +138,23 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
         }
     }
 
-    return Ok(());
+    Ok(())
 }
 
-fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
+fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context, backend: &mut Backend) -> Result<(), (ResultCode, String)> {
+    // Обработка даты выдачи карты
     if let Some(d) = card.get("IssueDate") {
         indv.clear("v-s:dateFrom");
         let sd = d.as_str().unwrap_or_default();
         if sd.len() > 20 {
-            indv.add_datetime_from_str("v-s:dateFrom", sd.split("T").next().unwrap_or_default());
+            indv.add_datetime_from_str("v-s:dateFrom", sd.split('T').next().unwrap_or_default());
         } else {
             indv.add_datetime_from_str("v-s:dateFrom", sd);
         }
     }
 
+    // Обработка статуса карты
     if let Some(n) = get_int_from_value(&card, "CardStatus") {
-        /*
-        Вписать в [S]:
-        mnd-s:cardStatus (текст) = на основе поля CardStatus заполнить статус:
-            0 - "Активна"
-            1 - "Отключена"
-            2 - "Утеряна"
-            3 - "Украдена"
-            4 - "Сдана"
-            5 - "Неучтенная"
-            6 - "Аннулированная"
-            7 - "Истек срок действия"
-            8 - "Авто откл."
-         */
         let s = match n {
             0 => "Активна",
             1 => "Отключена",
@@ -180,19 +170,76 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
         indv.set_string("mnd-s:cardStatus", s, Lang::new_from_str("RU"));
     }
 
+    // Обработка даты истечения срока действия карты
     if let Some(d) = card.get("ExpireDate") {
         indv.clear("v-s:dateTo");
         indv.add_datetime_from_str("v-s:dateTo", d.as_str().unwrap_or_default());
     }
 
+    // Очистка существующих уровней доступа
+    indv.clear("mnd-s:hasAccessLevel");
+    indv.clear("mnd-s:hasTempAccessLevel");
+
+    // Вектор для временных уровней доступа
+    let mut temp_access_levels = Vec::new();
+
+    // Счетчик для генерации уникальных идентификаторов временных уровней доступа
+    let mut temp_level_counter = 1;
+
+    // Получение идентификатора исходного индивидуала
+    let source_indv_id = indv.get_id().replace("d:", ""); // Удаляем префикс 'd:', если он есть
+
+    // Обработка ClearanceCodes
     if let Some(v) = card.get("ClearanceCodes") {
         if v.is_array() {
             for c_el in v.as_array().unwrap_or(&vec![]) {
-                if let Some(v) = c_el.get("ClearCode") {
-                    if let Some(v) = v.get("ClearCodeID") {
-                        if let Some(v) = v.as_str() {
-                            if let Some(access_level_id) = ctx.access_level_dict.get(v) {
-                                indv.add_uri("mnd-s:hasAccessLevel", access_level_id);
+                if let Some(clear_code) = c_el.get("ClearCode") {
+                    if let Some(clear_code_id_value) = clear_code.get("ClearCodeID") {
+                        if let Some(clear_code_id) = clear_code_id_value.as_str() {
+                            // Поиск уровня доступа по ClearCodeID
+                            let access_level_id = ctx.access_level_dict.get(clear_code_id);
+
+                            if let Some(access_level_id) = access_level_id {
+                                // Проверка на наличие ValidTo
+                                let valid_to_str = clear_code.get("ValidTo").and_then(|v| v.as_str());
+                                let is_permanent = valid_to_str.is_none() || valid_to_str == Some("2100-01-01T00:00:00");
+
+                                if is_permanent {
+                                    // Постоянный уровень доступа
+                                    indv.add_uri("mnd-s:hasAccessLevel", access_level_id);
+                                } else {
+                                    // Временный уровень доступа
+                                    let valid_from_str = clear_code.get("ValidFrom").and_then(|v| v.as_str());
+                                    let valid_to_str = clear_code.get("ValidTo").and_then(|v| v.as_str());
+
+                                    // Создание индивидуала временного уровня доступа
+                                    let mut temp_access_level_indv = Individual::default();
+                                    let temp_access_level_id = format!("d:tempAccessLevel_{}_{}", source_indv_id, temp_level_counter);
+                                    temp_level_counter += 1;
+
+                                    temp_access_level_indv.set_id(&temp_access_level_id);
+                                    temp_access_level_indv.set_uri("rdf:type", "mnd-s:TemporaryAccessLevel");
+                                    temp_access_level_indv.set_uri("v-s:backwardProperty", "mnd-s:hasTempAccessLevel");
+                                    temp_access_level_indv.set_uri("v-s:backwardTarget", indv.get_id());
+                                    temp_access_level_indv.set_bool("v-s:canRead", true);
+                                    temp_access_level_indv.set_uri("mnd-s:hasAccessLevel", access_level_id);
+
+                                    // Установка дат
+                                    if let Some(valid_from_str) = valid_from_str {
+                                        temp_access_level_indv.add_datetime_from_str("v-s:dateFrom", valid_from_str);
+                                    }
+                                    if let Some(valid_to_str) = valid_to_str {
+                                        temp_access_level_indv.add_datetime_from_str("v-s:dateTo", valid_to_str);
+                                    }
+
+                                    // Добавление временного уровня доступа в список
+                                    temp_access_levels.push(temp_access_level_indv);
+
+                                    // Добавление ссылки на временный уровень доступа в исходный индивидуал
+                                    indv.add_uri("mnd-s:hasTempAccessLevel", &temp_access_level_id);
+                                }
+                            } else {
+                                warn!("Access level with ClearCodeID={} not found in access_level_dict", clear_code_id);
                             }
                         }
                     }
@@ -200,6 +247,23 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) {
             }
         }
     }
+
+    // Сохранение временных уровней доступа
+    for temp_access_level_indv in temp_access_levels.iter_mut() {
+        backend.mstorage_api.update_use_param(
+            &ctx.sys_ticket,
+            "prowatch",
+            "",
+            0,
+            IndvOp::Put,
+            temp_access_level_indv,
+        ).map_err(|e| {
+            error!("Failed to save temporary access level: {:?}", e);
+            (ResultCode::DatabaseModifiedError, "Failed to save temporary access level".to_string())
+        })?;
+    }
+
+    Ok(())
 }
 
 fn is_user_in_group(user_id: &str, group: &str) -> bool {
@@ -223,7 +287,7 @@ fn is_user_in_group(user_id: &str, group: &str) -> bool {
         },
         Err(e) => error!("failed check user in group [{}], user = {}, err = {}", group, &user_id, e),
     }
-    return false;
+    false
 }
 
 fn check_company(card: &Value, backend: &mut Backend, src_indv: &mut Individual) -> bool {
@@ -267,5 +331,5 @@ fn check_company(card: &Value, backend: &mut Backend, src_indv: &mut Individual)
         }
     }
 
-    return false;
+    false
 }
