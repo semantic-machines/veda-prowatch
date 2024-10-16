@@ -9,10 +9,10 @@ use prowatch_client::apis::Error;
 use serde_json::json;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
-use std::{fs, io};
 use std::fs::File;
 use std::io::{ErrorKind, Write};
 use std::ops::{Add, Sub};
+use std::{fs, io};
 use uuid::Uuid;
 use v_common::module::veda_backend::Backend;
 use v_common::onto::datatype::Lang;
@@ -68,7 +68,7 @@ pub fn load_access_level_dict(module: &mut Backend, sys_ticket: &str) -> io::Res
             }
         }
     } else {
-        return Err(io::Error::new (ErrorKind::Other, "fail load access level dict"));
+        return Err(io::Error::new(ErrorKind::Other, "fail load access level dict"));
     }
     Ok(dir)
 }

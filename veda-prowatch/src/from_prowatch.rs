@@ -15,7 +15,7 @@ use v_common::v_authorization::common::Trace;
 pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     src_indv.parse_all();
     let mut asc_indvs = vec![];
-    let mut additional_artifacts= vec![];
+    let mut additional_artifacts = vec![];
 
     warn!("@1");
     if src_indv.get_first_literal("mnd-s:hasPassKind").is_some() {
@@ -90,7 +90,6 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
             }
         }
 
-
         /*
         Перед дальнейшими действиями требуется проверить соответствие организации сотрудника указанной в PW и пользователя создающего запрос:
         [инн_организации_в_PW] = CustomBadgeFields.BADGE_COMPANY_ID (параметр из CustomBadgeFields запроса держателя)
@@ -139,14 +138,7 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
     }
 
     for temp_access_level_indv in additional_artifacts.iter_mut() {
-        backend.mstorage_api.update_use_param(
-            &ctx.sys_ticket,
-            "prowatch",
-            "",
-            0,
-            IndvOp::Put,
-            temp_access_level_indv,
-        ).map_err(|e| {
+        backend.mstorage_api.update_use_param(&ctx.sys_ticket, "prowatch", "", 0, IndvOp::Put, temp_access_level_indv).map_err(|e| {
             error!("Failed to save temporary access level: {:?}", e);
             (ResultCode::DatabaseModifiedError, "Failed to save temporary access level".to_string())
         })?;

@@ -6,13 +6,13 @@ mod from_prowatch;
 mod lock;
 mod to_prowatch;
 
-use std::process::exit;
 use crate::common::{clear_card_and_set_err, load_access_level_dict, set_update_status, Context, PassType};
 use crate::from_prowatch::sync_data_from_prowatch;
 use crate::lock::{lock_holder, lock_unlock_card};
 use crate::to_prowatch::{delete_from_prowatch, insert_to_prowatch, update_prowatch_data};
 use prowatch_client::apis::client::PWAPIClient;
 use prowatch_client::apis::configuration::Configuration;
+use std::process::exit;
 use std::thread;
 use std::time as std_time;
 use url::Url;
