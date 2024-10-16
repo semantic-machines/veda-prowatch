@@ -15,6 +15,7 @@ use v_common::v_authorization::common::Trace;
 pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_indv: &mut Individual) -> Result<(), (ResultCode, String)> {
     src_indv.parse_all();
     let mut asc_indvs = vec![];
+    let mut additional_artifacts= vec![];
 
     warn!("@1");
     if src_indv.get_first_literal("mnd-s:hasPassKind").is_some() {
@@ -60,7 +61,6 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
             return match e {
                 Error::Reqwest(_) | Error::Serde(_) => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
                 Error::Io(_) => Err((ResultCode::ConnectError, "Карта не найдена".to_owned())),
-                _ => Err((ResultCode::UnprocessableEntity, "Карта не найдена".to_owned())),
             };
         }
 
@@ -105,7 +105,7 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
         }
 
         warn!("@8 card={:?}", card);
-        set_card_to_indv(card, src_indv, ctx, backend)?;
+        additional_artifacts = set_card_to_indv(card, src_indv, ctx)?;
         // Обновили вызов функции, добавив backend и обработку ошибок
 
         if let Some(badge) = res_badge.get(0) {
@@ -138,10 +138,26 @@ pub fn sync_data_from_prowatch(backend: &mut Backend, ctx: &mut Context, src_ind
         }
     }
 
+    for temp_access_level_indv in additional_artifacts.iter_mut() {
+        backend.mstorage_api.update_use_param(
+            &ctx.sys_ticket,
+            "prowatch",
+            "",
+            0,
+            IndvOp::Put,
+            temp_access_level_indv,
+        ).map_err(|e| {
+            error!("Failed to save temporary access level: {:?}", e);
+            (ResultCode::DatabaseModifiedError, "Failed to save temporary access level".to_string())
+        })?;
+    }
+
     Ok(())
 }
 
-fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context, backend: &mut Backend) -> Result<(), (ResultCode, String)> {
+fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context) -> Result<Vec<Individual>, (ResultCode, String)> {
+    let mut out_indv = Vec::new();
+
     // Обработка даты выдачи карты
     if let Some(d) = card.get("IssueDate") {
         indv.clear("v-s:dateFrom");
@@ -179,9 +195,6 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context, backend: 
     // Очистка существующих уровней доступа
     indv.clear("mnd-s:hasAccessLevel");
     indv.clear("mnd-s:hasTempAccessLevel");
-
-    // Вектор для временных уровней доступа
-    let mut temp_access_levels = Vec::new();
 
     // Счетчик для генерации уникальных идентификаторов временных уровней доступа
     let mut temp_level_counter = 1;
@@ -233,7 +246,7 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context, backend: 
                                     }
 
                                     // Добавление временного уровня доступа в список
-                                    temp_access_levels.push(temp_access_level_indv);
+                                    out_indv.push(temp_access_level_indv);
 
                                     // Добавление ссылки на временный уровень доступа в исходный индивидуал
                                     indv.add_uri("mnd-s:hasTempAccessLevel", &temp_access_level_id);
@@ -248,22 +261,7 @@ fn set_card_to_indv(card: Value, indv: &mut Individual, ctx: &Context, backend: 
         }
     }
 
-    // Сохранение временных уровней доступа
-    for temp_access_level_indv in temp_access_levels.iter_mut() {
-        backend.mstorage_api.update_use_param(
-            &ctx.sys_ticket,
-            "prowatch",
-            "",
-            0,
-            IndvOp::Put,
-            temp_access_level_indv,
-        ).map_err(|e| {
-            error!("Failed to save temporary access level: {:?}", e);
-            (ResultCode::DatabaseModifiedError, "Failed to save temporary access level".to_string())
-        })?;
-    }
-
-    Ok(())
+    Ok(out_indv)
 }
 
 fn is_user_in_group(user_id: &str, group: &str) -> bool {
