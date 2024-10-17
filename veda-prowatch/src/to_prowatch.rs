@@ -155,7 +155,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
                 return Err((ResultCode::UnprocessableEntity, "Держатель карты не соответствует данным в PW".to_owned()));
             }
         } else {
-            return Err((ResultCode::UnprocessableEntity, "Не удалось сравнить держателья карты с данными из PW".to_owned()));
+            return Err((ResultCode::UnprocessableEntity, "Не удалось сравнить держателя карты с данными из PW".to_owned()));
         }
 
         let mut is_update_access_levels = false;
@@ -202,19 +202,20 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
         if is_update_ts_number {
             if let Some(rn) = ts_number {
                 let rn = rn.trim();
-                let cnj = json!( {
-                                "BadgeID": badge_id,
-                                "FirstName": rn,
-                                "CustomBadgeFields": [
-                                    {
-                                    "ColumnName": "BADGE_CAR_PLATE",
-                                    "TextValue": rn
-                                    },
-                                    {
-                                    "ColumnName": "BADGE_FNAME",
-                                    "TextValue": rn
-                                    }
-                                ] } );
+                let cnj = json!({
+                    "BadgeID": badge_id,
+                    "FirstName": rn,
+                    "CustomBadgeFields": [
+                        {
+                            "ColumnName": "BADGE_CAR_PLATE",
+                            "TextValue": rn
+                        },
+                        {
+                            "ColumnName": "BADGE_FNAME",
+                            "TextValue": rn
+                        }
+                    ]
+                });
                 if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
                     error!("to PW: update_ts_number: badges_put: err={:?}", e);
                     return Err((ResultCode::FailStore, format!("{:?}", e)));
@@ -230,13 +231,14 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
             if let Some(cf) = cardholder_family {
                 let cf = cf.trim();
                 let cnj = json!({
-                "BadgeID": badge_id,
-                "LastName": cf,
-                "CustomBadgeFields": [
-                {
-                    "ColumnName": "BADGE_LNAME",
-                    "TextValue": cf
-                } ]
+                    "BadgeID": badge_id,
+                    "LastName": cf,
+                    "CustomBadgeFields": [
+                        {
+                            "ColumnName": "BADGE_LNAME",
+                            "TextValue": cf
+                        }
+                    ]
                 });
                 if let Err(e) = ctx.pw_api_client.badging_api().badges_put(cnj) {
                     error!("to PW: update_family: badges_put: err={:?}", e);
@@ -270,6 +272,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
                 }
             }
 
+            // Collect permanent access levels
             let mut access_levels = HashSet::new();
 
             if is_tmp_update_access_levels {
@@ -278,8 +281,52 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
                 set_hashset_from_field_field(module, &mut indv_c, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
             }
 
-            let sj =
+            // Collect temporary access levels
+            let mut temp_clearance_codes = Vec::new();
+            if let Some(temp_access_level_uris) = indv_c.get_literals("mnd-s:hasTempAccessLevel") {
+                for temp_access_level_uri in temp_access_level_uris {
+                    let mut temp_access_level_indv = Individual::default();
+                    if module.get_individual(&temp_access_level_uri, &mut temp_access_level_indv).is_some() {
+                        // Get associated access level
+                        if let Some(access_level_uri) = temp_access_level_indv.get_first_literal("mnd-s:hasAccessLevel") {
+                            let mut access_level_indv = Individual::default();
+                            if module.get_individual(&access_level_uri, &mut access_level_indv).is_some() {
+                                if let Some(clear_code_id) = access_level_indv.get_first_literal("v-s:registrationNumberAdd") {
+                                    // Get dates
+                                    let valid_from =
+                                        temp_access_level_indv.get_first_datetime("v-s:dateFrom").map(|dt| i64_to_str_date_ymdthms(Some(dt))).unwrap_or_default();
+                                    let valid_to =
+                                        temp_access_level_indv.get_first_datetime("v-s:dateTo").map(|dt| i64_to_str_date_ymdthms(Some(dt))).unwrap_or_default();
+
+                                    temp_clearance_codes.push(json!({
+                                        "ClearCodeID": clear_code_id,
+                                        "ClearCodeType": 3,
+                                        "ValidFrom": valid_from,
+                                        "ValidTo": valid_to
+                                    }));
+                                } else {
+                                    error!("Access level {} does not have v-s:registrationNumberAdd", access_level_uri);
+                                }
+                            } else {
+                                error!("Access level {} not found", access_level_uri);
+                            }
+                        } else {
+                            error!("Temporary access level {} does not have mnd-s:hasAccessLevel", temp_access_level_uri);
+                        }
+                    } else {
+                        error!("Temporary access level {} not found", temp_access_level_uri);
+                    }
+                }
+            }
+
+            // Prepare the JSON array to send to ProWatch
+            let mut sj =
                 access_levels_to_json_for_add(access_levels, is_tmp_update_access_levels, None, set_next_day_and_00_00_00(indv_c.get_first_datetime("v-s:dateToPlan")));
+
+            // Add temporary access levels to sj
+            sj.extend(temp_clearance_codes);
+
+            // Send request to ProWatch
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_update_access_levels(&card_number, json!(sj)) {
                 error!("to PW: badges_cards_card_update_access_levels: err={:?}", e);
                 return Err((ResultCode::FailStore, format!("{:?}", e)));
@@ -287,6 +334,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
                 info!("to PW: badges_cards_card_update_access_levels, card_number={}", card_number);
             }
 
+            // Continue with the rest of the code (updating custom fields)
             let mut custom_fields = vec![];
             let kpp_numbers = set_str_from_field_field(module, &mut indv_c, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
             if !kpp_numbers.is_empty() {
@@ -334,7 +382,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
             let cnj = json!({
                 "CardNumber": card_number,
                 "CardStatus": status,
-                "ExpireDate": i64_to_str_date_ymdthms (date_to)
+                "ExpireDate": i64_to_str_date_ymdthms(date_to)
             });
             if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_put(cnj) {
                 error!("to PW: badges_cards_card: err={:?}", e);
@@ -345,7 +393,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
 
             let sj = json!({
                 "BadgeID": badge_id,
-                "ExpireDate": i64_to_str_date_ymdthms (date_to)
+                "ExpireDate": i64_to_str_date_ymdthms(date_to)
             });
             if let Err(e) = ctx.pw_api_client.badging_api().badges_put(sj) {
                 error!("to PW: badges_cards: err={:?}", e);
@@ -355,7 +403,7 @@ pub fn update_prowatch_data(module: &mut Backend, ctx: &mut Context, indv_e: &mu
             }
         }
     }
-    return Ok(());
+    Ok(())
 }
 
 pub fn delete_from_prowatch(_module: &mut Backend, _ctx: &mut Context, _indv: &mut Individual) -> ResultCode {
