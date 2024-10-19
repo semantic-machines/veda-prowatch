@@ -411,10 +411,51 @@ pub fn delete_from_prowatch(_module: &mut Backend, _ctx: &mut Context, _indv: &m
 }
 
 fn add_card_with_access_to_pw(module: &mut Backend, ctx: &mut Context, badge_id: &str, src: &mut Individual) -> Result<(), (ResultCode, String)> {
-    let mut access_levels = Default::default();
+    // Собираем постоянные уровни доступа
+    let mut access_levels = HashSet::new();
     set_hashset_from_field_field(module, src, "mnd-s:hasAccessLevel", "v-s:registrationNumberAdd", &mut access_levels);
-    let alj = access_levels_to_json_for_new(access_levels);
 
+    // Формируем JSON для постоянных уровней доступа с помощью функции access_levels_to_json_for_new
+    let mut clearance_codes = access_levels_to_json_for_new(access_levels);
+
+    // Собираем временные уровни доступа
+    if let Some(temp_access_level_uris) = src.get_literals("mnd-s:hasTempAccessLevel") {
+        for temp_access_level_uri in temp_access_level_uris {
+            let mut temp_access_level_indv = Individual::default();
+            if module.get_individual(&temp_access_level_uri, &mut temp_access_level_indv).is_some() {
+                // Получаем связанный уровень доступа
+                if let Some(access_level_uri) = temp_access_level_indv.get_first_literal("mnd-s:hasAccessLevel") {
+                    let mut access_level_indv = Individual::default();
+                    if module.get_individual(&access_level_uri, &mut access_level_indv).is_some() {
+                        if let Some(clear_code_id) = access_level_indv.get_first_literal("v-s:registrationNumberAdd") {
+                            // Получаем даты действия
+                            let valid_from = temp_access_level_indv.get_first_datetime("v-s:dateFrom").map(|dt| i64_to_str_date_ymdthms(Some(dt))).unwrap_or_default();
+                            let valid_to = temp_access_level_indv.get_first_datetime("v-s:dateTo").map(|dt| i64_to_str_date_ymdthms(Some(dt))).unwrap_or_default();
+
+                            clearance_codes.push(json!({
+                                "ClearCode": {
+                                    "ClearCodeID": clear_code_id,
+                                    "ClearCodeType": 3,
+                                    "ValidFrom": valid_from,
+                                    "ValidTo": valid_to
+                                }
+                            }));
+                        } else {
+                            error!("Access level {} does not have v-s:registrationNumberAdd", access_level_uri);
+                        }
+                    } else {
+                        error!("Access level {} not found", access_level_uri);
+                    }
+                } else {
+                    error!("Temporary access level {} does not have mnd-s:hasAccessLevel", temp_access_level_uri);
+                }
+            } else {
+                error!("Temporary access level {} not found", temp_access_level_uri);
+            }
+        }
+    }
+
+    // Получаем номер карты
     let wcard_number = src.get_first_literal("mnd-s:cardNumber");
     if wcard_number.is_none() {
         error!("not found [mnd-s:cardNumber] in {}", src.get_id());
@@ -422,46 +463,31 @@ fn add_card_with_access_to_pw(module: &mut Backend, ctx: &mut Context, badge_id:
     }
     let card_number = wcard_number.unwrap();
 
+    // Удаляем карту, если она уже существует
     if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_card_delete(&card_number) {
-        warn!("fail delete card {}, badges_cards_card, err={:?}", card_number, e);
+        warn!("fail delete card {}, badges_cards_card_delete, err={:?}", card_number, e);
     }
 
+    // Формируем основной запрос для добавления карты
     let cnj = json!({
-    "BadgeID": badge_id,
-    "CardNumber": card_number,
-    "CardStatus": 0,
-    "ExpireDate": i64_to_str_date_ymdthms (set_23_59_59(src.get_first_datetime("v-s:dateToFact"))),
-    "Company": {
-        "CompanyID": "0x004842343236434238382D443536302D3433"
+        "BadgeID": badge_id,
+        "CardNumber": card_number,
+        "CardStatus": 0,
+        "ExpireDate": i64_to_str_date_ymdthms(set_23_59_59(src.get_first_datetime("v-s:dateToFact"))),
+        "Company": {
+            "CompanyID": "0x004842343236434238382D443536302D3433"
         },
-    "ClearanceCodes": alj
-     });
+        "ClearanceCodes": clearance_codes
+    });
 
+    // Отправляем запрос на добавление карты с уровнями доступа
     if let Err(e) = ctx.pw_api_client.badging_api().badges_cards_post(cnj) {
         error!("to PW: add_card_with_access_to_pw: err={:?}", e);
         return Err((ResultCode::FailStore, format!("{:?}", e)));
     } else {
-        info!("to PW: add_card_with_access_to_pw, badge_id={}", badge_id);
+        info!("to PW: add_card_with_access_to_pw, badge_id={}, card_number={}", badge_id, card_number);
     }
-    /*
-        let mut custom_fields = vec![];
-        let kpp_numbers = set_str_from_field_field(module, src, "mnd-s:hasAccessLevel", "mnd-s:accessLevelCheckpoints");
-        if !kpp_numbers.is_empty() {
-            add_txt_to_fields(&mut custom_fields, "BADGE_CAR_ENTRY_POINT", Some(kpp_numbers));
-        }
 
-        let reqj = json!({
-            "BadgeID": badge_id,
-            "CustomBadgeFields": custom_fields
-        });
-
-        if let Err(e) = ctx.pw_api_client.badging_api().badges_put(reqj) {
-            error!("add_card_with_access_to_pw, put CustomBadgeFields: err={:?}", e);
-            return Err((ResultCode::FailStore, format!("{:?}", e)));
-        } else {
-            info!("success add_card_with_access_to_pw, put CustomBadgeFields, badge_id={}", badge_id);
-        }
-    */
     Ok(())
 }
 
