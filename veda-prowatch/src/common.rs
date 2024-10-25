@@ -266,17 +266,24 @@ pub fn get_pass_type(indv_p: &mut Individual) -> PassType {
         }
     } else {
         if let Some(has_kind_for_pass) = indv_p.get_first_literal("mnd-s:hasPassKind") {
-            if has_kind_for_pass == "d:c94b6f98986d493cae4a3a37249101dc"
-                || has_kind_for_pass == "d:5f5be080f1004af69742bc574c030609"
-                || has_kind_for_pass == "d:1799f1e110054b5a9ef819754b0932ce"
-            {
+            let vehicle_pass_kinds: HashSet<&str> = [
+                "d:c94b6f98986d493cae4a3a37249101dc",
+                "d:5f5be080f1004af69742bc574c030609",
+                "d:1799f1e110054b5a9ef819754b0932ce",
+                "d:zl5pvfko9s2vyv39ytg9any1rk",
+            ].iter().cloned().collect();
+
+            let human_pass_kinds: HashSet<&str> = [
+                "d:ece7e741557e406bb996809163810c6e",
+                "d:a149d268628b46ae8d40c6ea0ac7f3dd",
+                "d:228e15d5afe544c099c337ceafa47ea6",
+                "d:ih7mpbsuu6xxmy7ouqlyhfqyua",
+            ].iter().cloned().collect();
+
+            if vehicle_pass_kinds.contains(has_kind_for_pass.as_str()) {
                 return PassType::Vehicle;
             }
-            if has_kind_for_pass == "d:ece7e741557e406bb996809163810c6e"
-                || has_kind_for_pass == "d:a149d268628b46ae8d40c6ea0ac7f3dd"
-                || has_kind_for_pass == "d:228e15d5afe544c099c337ceafa47ea6"
-                || has_kind_for_pass == "d:ih7mpbsuu6xxmy7ouqlyhfqyua"
-            {
+            if human_pass_kinds.contains(has_kind_for_pass.as_str()) {
                 return PassType::Human;
             }
         }
@@ -564,6 +571,14 @@ pub fn set_badge_to_indv(el: &Value, dest: &mut Individual) {
     }
 
     let fields = get_custom_badge_as_list(el);
+
+    // Добавлено: обработка поля BADGE_STATE_NAME
+    if let Some(v) = fields.get("BADGE_STATE_NAME") {
+        if let Some(s) = v.as_str() {
+            dest.set_string("v-s:reason", &s, Lang::new_from_str("RU"));
+        }
+    }
+
     if let Some(s) = concat_fields(&["BADGE_COMPANY_NAME", "BADGE_DEPARTMENT", "BADGE_TITLE"], Some(&fields), " ") {
         dest.set_string("rdfs:comment", &s, Lang::new_from_str("RU"));
     }
